@@ -27,7 +27,7 @@ export default function AdminDashboard() {
         {activeService === 'General' ? (
           <AppointmentTable date={selectedDate} endDate={endDate} boxFilter={activeBox} />
         ) : activeView === 'grid' ? (
-          <ScheduleGrid garage={currentService?.fullLabel as string} date={selectedDate} endDate={endDate} />
+          <ScheduleGrid garage={currentService?.fullLabel as string} date={selectedDate} endDate={endDate} boxFilter={activeBox} />
         ) : (
           <AppointmentTable date={selectedDate} endDate={endDate} garageFilter={currentService?.fullLabel} boxFilter={activeBox} />
         )}

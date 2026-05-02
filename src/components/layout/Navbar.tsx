@@ -102,13 +102,13 @@ export default function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-graphite/80 backdrop-blur-xl border-b border-white/5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-20 items-center">
-          <div className="flex flex-col">
+        <div className={`flex justify-between items-center ${isAdmin ? 'py-2 min-h-[5rem]' : 'h-20'}`}>
+          <div className="flex flex-col shrink-0">
             <Link to="/" className="flex items-center gap-2 group">
               <div className="w-8 h-8 bg-accent-orange rounded flex items-center justify-center transition-transform group-hover:rotate-12">
                 <Settings className="text-white w-5 h-5" />
               </div>
-              <span className="text-lg font-display font-bold tracking-tighter text-white">
+              <span className="text-lg font-display font-bold tracking-tighter text-white whitespace-nowrap">
                 AUTOTECH <span className="text-accent-orange">SOLUTIONS</span>
               </span>
             </Link>
@@ -128,7 +128,7 @@ export default function Navbar() {
 
           {/* Admin Specific Header Controls */}
           {isAdmin ? (
-            <div className="hidden lg:flex items-center gap-4 flex-grow justify-start px-8">
+            <div className="hidden lg:flex flex-col items-start gap-2 flex-grow px-8 py-1">
               {/* Service Selection Tabs */}
               <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
                 {services.map((service) => (
@@ -137,71 +137,81 @@ export default function Navbar() {
                     onClick={() => {
                       setActiveService(service.id as ServiceType);
                       setActiveBox('Все');
-                      if (service.id === 'General') setActiveView('log'); else setActiveView('grid');
+                      setActiveView('log');
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
                       activeService === service.id 
                         ? 'bg-white text-accent-orange shadow-lg hover:bg-accent-orange hover:text-white' 
                         : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
                     }`}
                   >
                     <service.icon className="w-3 h-3" />
-                    {activeService === 'General' ? service.fullLabel : service.label}
+                    {service.fullLabel}
                   </button>
                 ))}
               </div>
 
-              {/* View & Box Toggles */}
-              {(activeService !== 'General' || activeView === 'log') && (
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/5 h-fit">
-                    {activeService !== 'General' && (
-                      <>
-                        <button
-                          onClick={() => setActiveView('grid')}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                            activeView === 'grid' 
-                              ? 'bg-white text-blue-600 shadow-md hover:bg-blue-600 hover:text-white' 
-                              : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
-                          }`}
-                        >
-                          <LayoutGrid className="w-3 h-3" />
-                          График
-                        </button>
-                        <button
-                          onClick={() => setActiveView('log')}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                            activeView === 'log' 
-                              ? 'bg-white text-blue-600 shadow-md hover:bg-blue-600 hover:text-white' 
-                              : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
-                          }`}
-                        >
-                          <List className="w-3 h-3" />
-                          Журнал
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  {activeView === 'log' && activeService !== 'General' && (
-                    <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
-                      {['Все', 'Бокс А', 'Бокс Б', 'Бокс В'].map((box) => (
-                        <button
-                          key={box}
-                          onClick={() => setActiveBox(box)}
-                          className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all ${
-                            activeBox === box 
-                              ? 'bg-white text-gray-900 border border-white shadow-md hover:bg-transparent hover:text-white' 
-                              : 'text-white bg-white/5 hover:text-gray-600 hover:bg-transparent'
-                          }`}
-                        >
-                          {box}
-                        </button>
-                      ))}
+              {/* View & Box Toggles - Fixed height container to prevent layout shifts */}
+              <div className="h-8 flex items-center gap-2">
+                {activeService !== 'General' ? (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-2"
+                  >
+                    <div className="flex gap-1 bg-black/20 p-1 rounded-xl border border-white/5 h-fit">
+                      <button
+                        onClick={() => setActiveView('log')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                          activeView === 'log' 
+                            ? 'bg-white text-blue-600 shadow-md hover:bg-blue-600 hover:text-white' 
+                            : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
+                        }`}
+                      >
+                        <List className="w-3 h-3" />
+                        Журнал записей
+                      </button>
+                      <button
+                        onClick={() => setActiveView('grid')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                          activeView === 'grid' 
+                            ? 'bg-white text-blue-600 shadow-md hover:bg-blue-600 hover:text-white' 
+                            : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
+                        }`}
+                      >
+                        <LayoutGrid className="w-3 h-3" />
+                        График
+                      </button>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {activeView === 'log' && (
+                      <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
+                        {['Все', 'Бокс А', 'Бокс Б', 'Бокс В'].map((box) => (
+                          <button
+                            key={box}
+                            onClick={() => setActiveBox(box)}
+                            className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all ${
+                              activeBox === box 
+                                ? 'bg-white text-gray-900 border border-white shadow-md' 
+                                : 'text-white bg-white/5 hover:text-gray-600 hover:bg-transparent'
+                            }`}
+                          >
+                            {box}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                ) : (
+                  /* Placeholder when General is active to maintain height and position */
+                  <div className="flex gap-1 items-center bg-white/5 p-1 rounded-xl border border-white/5 h-fit">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-500">
+                      <List className="w-3 h-3" />
+                      Журнал записей
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             /* Desktop Site Nav */

@@ -1,25 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutGrid, List } from 'lucide-react';
+import { useAdminStore } from '../../store/adminStore';
 import ScheduleGrid from '../../components/admin/ScheduleGrid';
 import AppointmentTable from '../../components/admin/AppointmentTable';
 import ExpandedCalendar from '../../components/admin/ExpandedCalendar';
 import GarageBookingSummary from '../../components/admin/GarageBookingSummary';
 
 export default function RepairSchedule() {
-  const [activeTab, setActiveTab] = useState<'grid' | 'log'>('grid');
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const saved = localStorage.getItem('admin_selected_date');
-    if (saved) return saved;
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('admin_selected_date', selectedDate);
-  }, [selectedDate]);
+  const [activeTab, setActiveTab] = useState<'grid' | 'log'>('log');
+  const { selectedDate, setSelectedDate, activeBox } = useAdminStore();
 
   return (
     <div className="space-y-8">
@@ -38,6 +27,17 @@ export default function RepairSchedule() {
 
       <div className="flex gap-1 bg-black/40 p-1 rounded-2xl border border-white/5 w-fit">
         <button
+          onClick={() => setActiveTab('log')}
+          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+            activeTab === 'log' 
+              ? 'bg-accent-orange text-white shadow-lg shadow-accent-orange/20' 
+              : 'text-gray-500 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <List className="w-3.5 h-3.5" />
+          Журнал записей
+        </button>
+        <button
           onClick={() => setActiveTab('grid')}
           className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
             activeTab === 'grid' 
@@ -48,23 +48,12 @@ export default function RepairSchedule() {
           <LayoutGrid className="w-3.5 h-3.5" />
           График
         </button>
-        <button
-          onClick={() => setActiveTab('log')}
-          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-            activeTab === 'log' 
-              ? 'bg-accent-orange text-white shadow-lg shadow-accent-orange/20' 
-              : 'text-gray-500 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <List className="w-3.5 h-3.5" />
-          Журнал
-        </button>
       </div>
 
       {activeTab === 'grid' ? (
-        <ScheduleGrid garage="Слесарный ремонт и ТО" date={selectedDate} />
+        <ScheduleGrid garage="Слесарный ремонт и ТО" date={selectedDate} boxFilter={activeBox} />
       ) : (
-        <AppointmentTable date={selectedDate} garageFilter="Слесарный ремонт и ТО" />
+        <AppointmentTable date={selectedDate} garageFilter="Слесарный ремонт и ТО" boxFilter={activeBox} />
       )}
     </div>
   );

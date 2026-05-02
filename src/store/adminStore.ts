@@ -9,12 +9,14 @@ interface AdminState {
   activeService: ServiceType;
   activeView: ViewType;
   activeBox: string;
+  activeStatus: string | null;
   isSidebarOpen: boolean;
   setSelectedDate: (date: string) => void;
   setEndDate: (date: string | null) => void;
   setActiveService: (service: ServiceType) => void;
   setActiveView: (view: ViewType) => void;
   setActiveBox: (box: string) => void;
+  setActiveStatus: (status: string | null) => void;
   setIsSidebarOpen: (isOpen: boolean) => void;
 }
 
@@ -30,8 +32,9 @@ export const useAdminStore = create<AdminState>((set) => ({
   selectedDate: localStorage.getItem('admin_selected_date') || getToday(),
   endDate: localStorage.getItem('admin_end_date') || null,
   activeService: (localStorage.getItem('admin_active_service') as ServiceType) || 'General',
-  activeView: (localStorage.getItem('admin_active_view') as ViewType) || 'grid',
+  activeView: (localStorage.getItem('admin_active_view') as ViewType) || 'log',
   activeBox: localStorage.getItem('admin_active_box') || 'Все',
+  activeStatus: null,
   isSidebarOpen: localStorage.getItem('admin_sidebar_open') !== 'false',
   setSelectedDate: (date) => {
     localStorage.setItem('admin_selected_date', date);
@@ -57,6 +60,7 @@ export const useAdminStore = create<AdminState>((set) => ({
     localStorage.setItem('admin_active_box', box);
     set({ activeBox: box });
   },
+  setActiveStatus: (status) => set({ activeStatus: status }),
   setIsSidebarOpen: (isOpen) => {
     localStorage.setItem('admin_sidebar_open', String(isOpen));
     set({ isSidebarOpen: isOpen });

@@ -1,22 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Clock, Box, Info, Car } from 'lucide-react';
+import { useAdminStore } from '../../store/adminStore';
 import EditAppointmentModal from './EditAppointmentModal';
 
 interface ScheduleGridProps {
   garage: string;
   date: string;
   endDate?: string | null;
+  boxFilter?: string;
 }
 
 const HOURS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
 const BOXES = ['Бокс А', 'Бокс Б', 'Бокс В'];
 
-export default function ScheduleGrid({ garage, date, endDate }: ScheduleGridProps) {
+export default function ScheduleGrid({ garage, date, endDate, boxFilter }: ScheduleGridProps) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingAppointment, setEditingAppointment] = useState<any | null>(null);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const { activeStatus } = useAdminStore();
 
   const STATUS_OPTIONS = [
     { label: 'НОВАЯ', code: 'NEW' },
@@ -84,13 +87,34 @@ export default function ScheduleGrid({ garage, date, endDate }: ScheduleGridProp
     }
   };
 
+  const filteredAppointments = useMemo(() => {
+    if (!activeStatus || activeStatus === 'Все') return appointments;
+    return appointments.filter(app => {
+      const s = (app.status || "").toUpperCase();
+      switch (activeStatus) {
+        case 'Новые':
+          return !s || s === 'NEW' || s === 'RAW';
+        case 'Отмененные':
+          return s === 'CANCELLED';
+        case 'Подтвержденные':
+          return s === 'CONFIRMED';
+        case 'Завершенные':
+          return s === 'COMPLETED';
+        case 'Закрытые':
+          return s === 'CLOSED';
+        default:
+          return true;
+      }
+    });
+  }, [appointments, activeStatus]);
+
   const getAppointmentAt = (box: string, hour: string) => {
-    return appointments.find(a => a.box === box && a.time === hour);
+    return filteredAppointments.find(a => a.box === box && a.time === hour);
   };
 
   const isSlotCovered = (box: string, hour: string) => {
     const hourInt = parseInt(hour);
-    return appointments.some(a => {
+    return filteredAppointments.some(a => {
       const startHour = parseInt(a.time);
       const endHour = startHour + (a.duration || 1);
       return a.box === box && hourInt > startHour && hourInt < endHour;
@@ -101,10 +125,14 @@ export default function ScheduleGrid({ garage, date, endDate }: ScheduleGridProp
     if (!phone) return phone;
     const cleaned = phone.replace(/\D/g, '');
     if (cleaned.length === 11) {
-      return `+7 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7, 9)}-${cleaned.slice(9, 11)}`;
+      return `+7(${cleaned.slice(1, 4)})${cleaned.slice(4, 7)}-${cleaned.slice(7, 9)}-${cleaned.slice(9, 11)}`;
     }
     return phone;
   };
+
+  const displayedBoxes = !boxFilter || boxFilter === 'Все' 
+    ? BOXES 
+    : BOXES.filter(b => b === boxFilter);
 
   if (loading) return <div className="p-20 text-center animate-pulse text-gray-500">Загрузка расписания...</div>;
 
@@ -115,7 +143,7 @@ export default function ScheduleGrid({ garage, date, endDate }: ScheduleGridProp
           <thead>
             <tr className="bg-black/40 border-b border-white/10">
               <th className="p-4 border-r border-white/10 w-24"></th>
-              {BOXES.map(box => (
+              {displayedBoxes.map(box => (
                 <th key={box} className="p-4 text-center">
                   <div className="flex flex-col items-center gap-1">
                     <Box className="w-4 h-4 text-accent-orange" />
@@ -134,7 +162,7 @@ export default function ScheduleGrid({ garage, date, endDate }: ScheduleGridProp
                     <span className="text-sm font-bold text-gray-400 group-hover:text-white transition-colors">{hour}</span>
                   </div>
                 </td>
-                {BOXES.map(box => {
+                {displayedBoxes.map(box => {
                   const app = getAppointmentAt(box, hour);
                   const covered = isSlotCovered(box, hour);
                   
@@ -151,7 +179,7 @@ export default function ScheduleGrid({ garage, date, endDate }: ScheduleGridProp
                           initial={{ opacity: 0, scale: 0.95 }}
                           animate={{ opacity: 1, scale: 1 }}
                           onDoubleClick={() => setEditingAppointment(app)}
-                          className={`absolute inset-1 border rounded-xl p-2.5 flex flex-col justify-between group/card transition-all z-10 overflow-hidden shadow-lg ${getStatusColor(app.status)} hover:shadow-2xl cursor-pointer select-none`}
+                          className={`absolute inset-1 border rounded-xl p-2.5 flex flex-col justify-between group/card transition-all shadow-lg ${getStatusColor(app.status)} hover:shadow-2xl cursor-pointer select-none ${activeMenu === app.orderId ? 'z-50' : 'z-10'}`}
                         >
                           <div className="flex justify-between items-start gap-2">
                             <div className="min-w-0 flex-1">

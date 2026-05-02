@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAdminStore, ServiceType } from '../../store/adminStore';
 
 interface GarageBookingSummaryProps {
   date: string;
@@ -8,9 +9,9 @@ interface GarageBookingSummaryProps {
 }
 
 const GARAGES = [
-  { name: 'Слесарный ремонт и ТО', label: 'Слесарный ремонт', color: 'text-blue-400', dot: 'bg-blue-500' },
-  { name: 'Электрика и диагностика', label: 'Электрика', color: 'text-purple-400', dot: 'bg-purple-500' },
-  { name: 'Детейлинг и покрытия', label: 'Детейлинг', color: 'text-emerald-400', dot: 'bg-emerald-500' }
+  { id: 'Repair' as ServiceType, name: 'Слесарный ремонт и ТО', label: 'Слесарный ремонт', color: 'text-blue-400', dot: 'bg-blue-500' },
+  { id: 'Diagnostic' as ServiceType, name: 'Электрика и диагностика', label: 'Электрика', color: 'text-purple-400', dot: 'bg-purple-500' },
+  { id: 'Detailing' as ServiceType, name: 'Детейлинг и покрытия', label: 'Детейлинг', color: 'text-emerald-400', dot: 'bg-emerald-500' }
 ];
 
 const BOXES = ['Бокс А', 'Бокс Б', 'Бокс В'];
@@ -18,6 +19,7 @@ const BOXES = ['Бокс А', 'Бокс Б', 'Бокс В'];
 export default function GarageBookingSummary({ date, endDate, garageFilter, isSidebar }: GarageBookingSummaryProps) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { setActiveService, activeBox, setActiveBox, activeStatus, setActiveStatus } = useAdminStore();
 
   useEffect(() => {
     const fetchApps = async () => {
@@ -65,18 +67,46 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
           label: box,
           count: boxApps.length,
           duration: totalDuration,
-          color: 'text-accent-orange'
+          color: 'text-accent-orange',
+          isActive: activeBox === box
         };
       })
     : GARAGES.map(g => ({
-        id: g.name,
+        id: g.id,
         label: g.name,
         count: filteredApps.filter(a => a.garage === g.name).length,
         duration: 0,
-        color: g.color
+        color: g.color,
+        isActive: false
       }));
 
+  const handleItemClick = (item: any) => {
+    if (!isSidebar) return;
+    
+    if (garageFilter) {
+      // We are showing BOXES
+      if (activeBox === item.id) {
+        setActiveBox('Все');
+      } else {
+        setActiveBox(item.id);
+      }
+    } else {
+      // We are showing GARAGES
+      setActiveService(item.id);
+    }
+  };
+
+  const handleStatusClick = (statusLabel: string) => {
+    if (!isSidebar) return;
+    if (activeStatus === statusLabel) {
+      setActiveStatus(null);
+    } else {
+      setActiveStatus(statusLabel);
+    }
+  };
+
   const statusCounts = {
+    all: filteredApps.length,
     new: filteredApps.filter(a => {
       const s = (a.status || "").toUpperCase();
       return !s || s === 'NEW' || s === 'RAW';
@@ -100,9 +130,17 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
           
           <div className="grid grid-cols-1 gap-3">
             {displayItems.map(item => (
-              <div key={item.id} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+              <button 
+                key={item.id} 
+                onClick={() => handleItemClick(item)}
+                className={`flex items-center justify-between rounded-xl px-4 py-3 border transition-all active:scale-[0.98] ${
+                  item.isActive 
+                    ? 'bg-accent-orange/10 border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                    : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
+                }`}
+              >
+                <div className="flex flex-col text-left">
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${item.isActive ? 'text-accent-orange' : 'text-gray-400'}`}>
                     {item.label}
                   </span>
                   {garageFilter && !loading && (
@@ -111,10 +149,10 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
                     </span>
                   )}
                 </div>
-                <span className={`text-lg font-black ${item.color} tracking-tight`}>
+                <span className={`text-lg font-black tracking-tight ${item.isActive ? 'text-accent-orange' : item.color}`}>
                   {loading ? '...' : item.count}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -125,16 +163,29 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Статусы:</div>
           <div className="space-y-2">
             {[
+              { label: 'Все', value: statusCounts.all, color: 'text-white' },
               { label: 'Новые', value: statusCounts.new, color: 'text-yellow-400' },
               { label: 'Отмененные', value: statusCounts.cancelled, color: 'text-red-400' },
               { label: 'Подтвержденные', value: statusCounts.confirmed, color: 'text-green-400' },
               { label: 'Завершенные', value: statusCounts.completed, color: 'text-blue-400' },
               { label: 'Закрытые', value: statusCounts.closed, color: 'text-gray-400' }
             ].map(s => (
-              <div key={s.label} className="flex justify-between items-center bg-white/3 rounded-lg px-3 py-2 border border-white/3">
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{s.label}</span>
-                <span className={`text-xs font-black ${s.color}`}>{loading ? '...' : s.value}</span>
-              </div>
+              <button 
+                key={s.label} 
+                onClick={() => handleStatusClick(s.label === 'Все' ? 'Все' : s.label)}
+                className={`w-full flex justify-between items-center rounded-lg px-3 py-2 border transition-all active:scale-[0.98] ${
+                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все')))
+                    ? 'bg-white/10 border-white/20 shadow-lg' 
+                    : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
+                }`}
+              >
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) ? 'text-white' : 'text-gray-500'
+                }`}>{s.label}</span>
+                <span className={`text-xs font-black ${
+                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) ? 'text-white' : s.color
+                }`}>{loading ? '...' : s.value}</span>
+              </button>
             ))}
           </div>
         </div>
@@ -175,6 +226,10 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
       <div className="flex flex-col gap-2 min-w-[120px]">
         <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Статусы:</div>
         <div className="flex flex-col gap-1">
+          <div className="flex justify-between items-center gap-4">
+            <span className="text-[10px] text-gray-400 font-medium lowercase">Все</span>
+            <span className="text-xs font-bold text-white">{loading ? '...' : statusCounts.all}</span>
+          </div>
           <div className="flex justify-between items-center gap-4">
             <span className="text-[10px] text-gray-400 font-medium lowercase">Новые</span>
             <span className="text-xs font-bold text-yellow-400">{loading ? '...' : statusCounts.new}</span>
