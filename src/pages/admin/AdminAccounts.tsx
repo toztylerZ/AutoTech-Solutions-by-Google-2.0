@@ -45,7 +45,7 @@ export default function AdminAccounts() {
               <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-10">Сотрудник</th>
               <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Роль / Доступ</th>
               <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Безопасность</th>
-              <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest pr-10 text-right">Действия</th>
+              <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest pr-10 text-left">Действия</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -84,7 +84,7 @@ export default function AdminAccounts() {
                      Сбросить пароль
                    </button>
                 </td>
-                <td className="p-6 pr-10 text-right">
+                <td className="p-6 pr-10 text-left">
                   <button className="p-2 text-gray-600 hover:text-red-500 transition-colors">
                     <Trash2 className="w-4 h-4" />
                   </button>

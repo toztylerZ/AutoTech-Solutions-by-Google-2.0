@@ -12,6 +12,7 @@ interface AdminState {
   activeStatus: string | null;
   highlightedOrderId: string | null;
   pendingFilter: 'today' | 'all' | null;
+  hasDoneInitialRedirect: boolean;
   isSidebarOpen: boolean;
   setSelectedDate: (date: string) => void;
   setEndDate: (date: string | null) => void;
@@ -21,26 +22,27 @@ interface AdminState {
   setActiveStatus: (status: string | null) => void;
   setHighlightedOrderId: (orderId: string | null) => void;
   setPendingFilter: (filter: 'today' | 'all' | null) => void;
+  setHasDoneInitialRedirect: (done: boolean) => void;
   setIsSidebarOpen: (isOpen: boolean) => void;
 }
 
 const getToday = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    // Current date in Moscow (UTC+3)
+    const moscowTime = new Date().toLocaleString('en-CA', { timeZone: 'Europe/Moscow', hour12: false });
+    // en-CA format is YYYY-MM-DD, HH:mm:ss
+    return moscowTime.split(',')[0];
 };
 
 export const useAdminStore = create<AdminState>((set) => ({
   selectedDate: localStorage.getItem('admin_selected_date') || getToday(),
   endDate: localStorage.getItem('admin_end_date') || null,
   activeService: (localStorage.getItem('admin_active_service') as ServiceType) || 'General',
-  activeView: (localStorage.getItem('admin_active_view') as ViewType) || 'log',
+  activeView: (localStorage.getItem('admin_active_view') as ViewType) || 'grid',
   activeBox: localStorage.getItem('admin_active_box') || 'Все',
   activeStatus: null,
   highlightedOrderId: null,
   pendingFilter: null,
+  hasDoneInitialRedirect: false,
   isSidebarOpen: localStorage.getItem('admin_sidebar_open') !== 'false',
   setSelectedDate: (date) => {
     localStorage.setItem('admin_selected_date', date);
@@ -66,9 +68,14 @@ export const useAdminStore = create<AdminState>((set) => ({
     localStorage.setItem('admin_active_box', box);
     set({ activeBox: box, pendingFilter: null });
   },
-  setActiveStatus: (status) => set({ activeStatus: status, pendingFilter: null }),
+  setActiveStatus: (status) => set((state) => ({ 
+    activeStatus: status,
+    // only clear pendingFilter if status is null and not in a pending view
+    pendingFilter: status === null ? state.pendingFilter : state.pendingFilter 
+  })),
   setHighlightedOrderId: (orderId) => set({ highlightedOrderId: orderId }),
-  setPendingFilter: (filter) => set({ pendingFilter: filter, activeStatus: null }),
+  setPendingFilter: (filter) => set({ pendingFilter: filter }),
+  setHasDoneInitialRedirect: (done) => set({ hasDoneInitialRedirect: done }),
   setIsSidebarOpen: (isOpen) => {
     localStorage.setItem('admin_sidebar_open', String(isOpen));
     set({ isSidebarOpen: isOpen });

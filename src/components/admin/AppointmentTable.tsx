@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useAdminStore, getServiceIdFromGarage } from '../../store/adminStore';
 import EditAppointmentModal from './EditAppointmentModal';
 import { AnimatePresence } from 'motion/react';
@@ -157,12 +157,26 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
         switch (activeStatus) {
           case 'Новые':
             return !s || s === 'NEW' || s === 'RAW';
+          case 'Завершенные':
+            return s === 'COMPLETED';
+          case 'Просроченные':
+            // Overdue is specifically CONFIRMED but past time
+            if (s !== 'CONFIRMED') return false;
+            const now = new Date();
+            let appDateStr = app.date;
+            if (appDateStr.includes('.')) {
+              const [d, m, y] = appDateStr.split('.');
+              appDateStr = `${y}-${m}-${d}`;
+            }
+            const appDate = new Date(appDateStr);
+            const [h, m] = (app.time || "00:00").split(':').map(Number);
+            appDate.setHours(h, m, 0, 0);
+            const endTimestamp = appDate.getTime() + (Number(app.duration) || 1) * 60 * 60 * 1000;
+            return now.getTime() > endTimestamp;
           case 'Отмененные':
             return s === 'CANCELLED';
           case 'Подтвержденные':
             return s === 'CONFIRMED';
-          case 'Завершенные':
-            return s === 'COMPLETED';
           case 'Закрытые':
             return s === 'CLOSED';
           default:
@@ -265,8 +279,30 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
     e.stopPropagation();
     const serviceId = getServiceIdFromGarage(app.garage);
     setActiveService(serviceId);
-    setActiveView('log');
+    setActiveView('grid');
     setHighlightedOrderId(app.orderId);
+  };
+
+  const formatDateDisplay = (dateStr: string) => {
+    if (!dateStr) return '—';
+    try {
+      let dStr = dateStr;
+      if (dateStr.includes('.')) {
+        const [d, m, y] = dateStr.split('.');
+        dStr = `${y}-${m}-${d}`;
+      }
+      const d = new Date(dStr);
+      if (isNaN(d.getTime())) return dateStr;
+      
+      const day = d.getDate().toString().padStart(2, '0');
+      const months = [
+        'января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
+        'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+      ];
+      return `${day} ${months[d.getMonth()]}`;
+    } catch (e) {
+      return dateStr;
+    }
   };
 
   const showDateColumn = !!endDate || !!pendingMode;
@@ -281,54 +317,54 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                 onClick={() => handleSort('orderId')}
                 className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest pl-8 cursor-pointer hover:text-white transition-colors"
               >
-                <div className="flex items-center gap-1">ID <SortIcon column="orderId" /></div>
+                <div className="flex items-center justify-start gap-1">ID <SortIcon column="orderId" /></div>
               </th>
               {showDateColumn && (
                 <th 
                   onClick={() => handleSort('date')}
-                  className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
+                  className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors text-left"
                 >
-                  <div className="flex items-center gap-1">Дата <SortIcon column="date" /></div>
+                  <div className="flex items-center justify-start gap-1">Дата <SortIcon column="date" /></div>
                 </th>
               )}
               <th 
                 onClick={() => handleSort('time')}
-                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
+                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors text-left"
               >
-                <div className="flex items-center gap-1">Время <SortIcon column="time" /></div>
+                <div className="flex items-center justify-start gap-1">Время <SortIcon column="time" /></div>
               </th>
               <th 
                 onClick={() => handleSort(garageFilter ? 'service' : 'garage')}
-                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
+                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors text-left"
               >
-                <div className="flex items-center gap-1">
+                <div className="flex items-center justify-start gap-1">
                   {garageFilter ? 'Вид сервиса' : 'Гараж'} 
                   <SortIcon column={garageFilter ? 'service' : 'garage'} />
                 </div>
               </th>
               <th 
                 onClick={() => handleSort('box')}
-                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
+                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors text-left"
               >
-                <div className="flex items-center gap-1">Бокс <SortIcon column="box" /></div>
+                <div className="flex items-center justify-start gap-1">Бокс <SortIcon column="box" /></div>
               </th>
               <th 
                 onClick={() => handleSort('clientName')}
-                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
+                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors text-left"
               >
-                <div className="flex items-center gap-1">Клиент <SortIcon column="clientName" /></div>
+                <div className="flex items-center justify-start gap-1">Клиент <SortIcon column="clientName" /></div>
               </th>
               <th 
                 onClick={() => handleSort('car')}
-                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
+                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors text-left"
               >
-                <div className="flex items-center gap-1">Автомобиль <SortIcon column="car" /></div>
+                <div className="flex items-center justify-start gap-1">Автомобиль <SortIcon column="car" /></div>
               </th>
               <th 
                 onClick={() => handleSort('status')}
-                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest pr-8 text-right cursor-pointer hover:text-white transition-colors"
+                className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest pr-8 text-left cursor-pointer hover:text-white transition-colors"
               >
-                <div className="flex items-center justify-end gap-1">Статус <SortIcon column="status" /></div>
+                <div className="flex items-center justify-start gap-1">Статус <SortIcon column="status" /></div>
               </th>
             </tr>
           </thead>
@@ -355,10 +391,17 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                   }}
                   className={`hover:bg-white/5 transition-colors group cursor-pointer ${app.orderId === highlightedOrderId ? 'bg-accent-orange/10 border-l-2 border-accent-orange' : ''}`}
                 >
-                  <td className="p-4 pl-8 font-mono text-xs text-gray-500">#{app.orderId || '—'}</td>
+                  <td className="p-4 pl-8 font-mono text-xs text-gray-500">
+                    <div className="flex items-center gap-2">
+                      {isPending(app) && (
+                        <AlertTriangle className="w-4 h-4 text-yellow-500 animate-[pulse_1s_infinite] drop-shadow-[0_0_5px_rgba(234,179,8,0.8)]" />
+                      )}
+                      #{app.orderId || '—'}
+                    </div>
+                  </td>
                   {showDateColumn && (
                     <td className="p-4 text-xs text-gray-400 font-bold whitespace-nowrap">
-                      {app.date}
+                      {formatDateDisplay(app.date)}
                     </td>
                   )}
                   <td className="p-4" onClick={(e) => handleTimeClick(e, app)}>
@@ -400,7 +443,7 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                     </div>
                   </td>
                   <td className="p-4 text-xs text-gray-400 font-medium">{garageFilter ? (app.car || '—') : (app.car || app.service)}</td>
-                  <td className="p-4 pr-8 text-right relative">
+                  <td className="p-4 pr-8 text-left relative">
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();

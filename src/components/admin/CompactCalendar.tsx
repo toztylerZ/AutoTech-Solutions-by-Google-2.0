@@ -89,12 +89,12 @@ export default function CompactCalendar({ selectedDate, endDate, onRangeChange }
       <AnimatePresence>
         {isOpen && (
           <>
-            <div className="fixed inset-0 z-[60]" onClick={() => setIsOpen(false)} />
+            <div className="fixed inset-0 z-[9998]" onClick={() => setIsOpen(false)} />
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute top-full left-0 mt-4 z-[70] bg-graphite-light border border-white/10 rounded-2xl shadow-2xl p-4 w-64 backdrop-blur-xl"
+              className="absolute top-full left-0 mt-4 z-[9999] bg-graphite-light border border-white/10 rounded-2xl shadow-2xl p-4 w-64 backdrop-blur-xl"
             >
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-bold text-white uppercase tracking-wider">

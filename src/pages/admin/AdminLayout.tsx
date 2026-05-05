@@ -22,7 +22,7 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="flex min-h-screen bg-black text-white">
+    <div className="flex min-h-screen bg-black text-white gap-2">
       {/* Dynamic Sidebar */}
       <motion.aside
         initial={false}
@@ -50,7 +50,7 @@ export default function AdminLayout() {
       </motion.aside>
 
       {/* Main Content Area */}
-      <main className="flex-grow ml-2 pt-2 pb-0 bg-[#050505]">
+      <main className="flex-grow pt-2 pb-0 bg-[#050505]">
         <div className="w-full h-full">
           <Outlet />
         </div>

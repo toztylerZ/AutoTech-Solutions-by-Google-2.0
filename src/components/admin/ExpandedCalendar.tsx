@@ -59,10 +59,11 @@ export default function ExpandedCalendar({ selectedDate, onDateChange }: Expande
   };
 
   const isToday = (day: number) => {
-    const today = new Date();
-    return today.getDate() === day && 
-           today.getMonth() === currentMonth.getMonth() && 
-           today.getFullYear() === currentMonth.getFullYear();
+    const moscowTime = new Date().toLocaleString('en-CA', { timeZone: 'Europe/Moscow', hour12: false });
+    const [y, m, d] = moscowTime.split(',')[0].split('-').map(Number);
+    return d === day && 
+           (m - 1) === currentMonth.getMonth() && 
+           y === currentMonth.getFullYear();
   };
 
   return (

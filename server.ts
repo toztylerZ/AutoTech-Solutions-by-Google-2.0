@@ -26,6 +26,42 @@ app.use(express.json());
 const CHATS_LOG_SPREADSHEET_ID = "1dEPsxN9ApmAw-lYpGtIZy9gFBTU1ZXMLfC7kqsmjjD8";
 const FEEDBACK_SPREADSHEET_ID = "1_pqTb2M8bGrEK2lzaMAZeFLR4wrwkfCYIm7SfoKKCcg";
 
+const FAQ_SPREADSHEET_ID = "19MOB7haF0D97sWTebuo0Q4E9d_vVy_SHWAt58GZQDzk";
+const PRICE_SPREADSHEET_ID = "1ryq0AloXjE-FXCz5_BkB8erYrVr8fvzr3SnOg42KTvc";
+const SCHEDULE_SPREADSHEET_ID = "1whc-vJNHIOhJhnT9Sf-eS5l88AbDqF1BAxwNkaKjiEU";
+
+// Simple in-memory cache
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const cache: Record<string, CacheEntry> = {};
+const CACHE_TTL: Record<string, number> = {
+  faq: 10 * 60 * 1000, // 10 minutes
+  prices: 10 * 60 * 1000, // 10 minutes
+  appointments: 45 * 1000, // 45 seconds (enough to reduce quota usage significantly)
+};
+
+function getFromCache(key: string) {
+  const entry = cache[key];
+  if (entry && (Date.now() - entry.timestamp) < (CACHE_TTL[key.split(":")[0]] || 60000)) {
+    return entry.data;
+  }
+  return null;
+}
+
+function setInCache(key: string, data: any) {
+  cache[key] = { data, timestamp: Date.now() };
+}
+
+function invalidateCache(prefix: string) {
+  Object.keys(cache).forEach(key => {
+    if (key.startsWith(prefix)) {
+      delete cache[key];
+    }
+  });
+}
+
 let sheetsClient: any = null;
 
 async function getSheetsClient() {
@@ -59,10 +95,6 @@ async function getSheetsClient() {
   return sheetsClient;
 }
 
-const FAQ_SPREADSHEET_ID = "19MOB7haF0D97sWTebuo0Q4E9d_vVy_SHWAt58GZQDzk";
-const PRICE_SPREADSHEET_ID = "1ryq0AloXjE-FXCz5_BkB8erYrVr8fvzr3SnOg42KTvc";
-const SCHEDULE_SPREADSHEET_ID = "1whc-vJNHIOhJhnT9Sf-eS5l88AbDqF1BAxwNkaKjiEU";
-
 const GARAGE_MAP: Record<string, string> = {
   "Слесарный ремонт и ТО": "Слесарный ремонт и ТО",
   "Электрика и диагностика": "Электрика и диагностика",
@@ -87,59 +119,86 @@ function resolveGarage(category: string) {
   return null;
 }
 
-async function getAppointments(date: string, garage?: string, box?: string, endDate?: string) {
-  const sheets = await getSheetsClient();
-  let rows: any[] = [];
-  const rangeToFetch = `A1:Z10000`; // Increased range to handle more data
-  
-  try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-      range: `booking!${rangeToFetch}`,
-    });
-    rows = response.data.values || [];
-  } catch (e) {
-    // Fallback to other common names
-    const fallbacks = ['Sheet1', 'schedule', 'Лист1', 'записи', 'Sheet 1', 'Worksheet'];
-    for (const name of fallbacks) {
-      try {
-        const response = await sheets.spreadsheets.values.get({
-          spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-          range: `${name}!${rangeToFetch}`,
-        });
-        const r = response.data.values || [];
-        if (r.length > 0) {
-          rows = r;
-          console.log(`[Admin] Data found in fallback sheet: "${name}"`);
-          break;
-        }
-      } catch (err) {}
+async function getAllAppointmentsMapped() {
+  const cacheKey = `appointments:all`;
+  let rows = getFromCache(cacheKey);
+
+  if (!rows) {
+    const sheets = await getSheetsClient();
+    const rangeToFetch = `A1:Z10000`;
+    
+    try {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+        range: `booking!${rangeToFetch}`,
+      });
+      rows = response.data.values || [];
+    } catch (e) {
+      const fallbacks = ['Sheet1', 'schedule', 'Лист1', 'записи', 'Sheet 1', 'Worksheet'];
+      for (const name of fallbacks) {
+        try {
+          const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+            range: `${name}!${rangeToFetch}`,
+          });
+          const r = response.data.values || [];
+          if (r.length > 0) {
+            rows = r;
+            break;
+          }
+        } catch (err) {}
+      }
+    }
+    
+    if (rows && rows.length > 0) {
+      setInCache(cacheKey, rows);
     }
   }
 
-  if (rows.length === 0) {
-    console.error("[Admin] No data found in any sheet range");
-    return [];
-  }
+  if (!rows || rows.length === 0) return [];
 
-  // Determine if first row is a header
-  // If first cell of first row is NOT a number and looks like a word, it's probably a header
   const firstRow = rows[0];
   const isHeader = firstRow && firstRow[0] && isNaN(parseInt(firstRow[0])) && firstRow[0].toString().length > 2;
   const dataRows = isHeader ? rows.slice(1) : rows;
+
+  return dataRows.map((row: any) => {
+    let timeRaw = (row[2] || "").toString().trim();
+    if (timeRaw && !timeRaw.includes(':')) timeRaw += ":00";
+    if (timeRaw && timeRaw.includes(':')) {
+      const [h, m] = timeRaw.split(':');
+      timeRaw = `${h.padStart(2, '0')}:${(m || '00').padEnd(2, '0').slice(0, 2)}`;
+    }
+
+    return {
+      orderId: row[0] || "",
+      date: row[1] || "",
+      time: timeRaw,
+      garage: (row[3] || "").toString().trim(),
+      box: (row[4] || "").toString().trim(),
+      service: row[5] || "",
+      duration: row[6] || "1",
+      status: row[7] || "Confirmed",
+      clientName: row[11] || "",
+      phone: row[12] || "",
+      car: row[13] || row[5] || "",
+      sessionId: row[10] || "",
+      comment: row[14] || ""
+    };
+  });
+}
+
+async function getAppointments(date: string, garage?: string, box?: string, endDate?: string) {
+  const allMapped = await getAllAppointmentsMapped();
   
-  // Filter by date range
-  let filtered = dataRows.filter((row: any) => {
-    let rowDate = (row[1] || "").toString().trim();
+  let filtered = allMapped.filter((app: any) => {
+    let rowDate = app.date;
     if (!rowDate) return false;
 
-    // Remove time if present (e.g. "01.05.2026, 12:00:00" -> "01.05.2026")
     if (rowDate.includes(',') || rowDate.includes(' ')) {
       rowDate = rowDate.split(/[ ,]/)[0];
     }
 
     let isoRowDate = rowDate;
-    // Handle DD.MM.YYYY
     if (rowDate.includes('.')) {
       const parts = rowDate.split('.');
       if (parts.length === 3) {
@@ -153,60 +212,26 @@ async function getAppointments(date: string, garage?: string, box?: string, endD
       return isoRowDate >= date.trim() && isoRowDate <= endDate.trim();
     }
     
-    // Handle ISO YYYY-MM-DD
     return isoRowDate === date.trim();
   });
 
-  // Normalize mapping to ensure consistent format for client
-  let mapped = filtered.map((row: any) => {
-    // Normalize time: "9:00" -> "09:00", "9:0" -> "09:00"
-    let timeRaw = (row[2] || "").toString().trim();
-    if (timeRaw && !timeRaw.includes(':')) {
-       timeRaw += ":00";
-    }
-    if (timeRaw && timeRaw.includes(':')) {
-      const [h, m] = timeRaw.split(':');
-      timeRaw = `${h.padStart(2, '0')}:${(m || '00').padEnd(2, '0').slice(0, 2)}`;
-    }
-
-    return [
-      row[0] || "", // ID
-      row[1] || "", // Date
-      timeRaw,     // Time (Normalized)
-      (row[3] || "").toString().trim(), // Garage
-      (row[4] || "").toString().trim(), // Box
-      row[5] || "", // Service
-      row[6] || "1", // Duration
-      row[7] || "Confirmed", // Status
-      row[8] || "", 
-      row[9] || "",
-      row[10] || "",
-      row[11] || "",
-      row[12] || "",
-      row[13] || "",
-      row[14] || "",
-      row[15] || "",
-    ];
-  });
-
   if (garage && garage !== "undefined") {
-    // Case-insensitive flexible check for garage
     const target = garage.toLowerCase().trim();
-    mapped = mapped.filter((app: any) => {
-      const appGarage = app[3].toLowerCase().trim();
+    filtered = filtered.filter((app: any) => {
+      const appGarage = app.garage.toLowerCase().trim();
       return appGarage === target || appGarage.includes(target) || target.includes(appGarage);
     });
   }
 
   if (box && box !== "undefined" && box !== "Все") {
     const targetBox = box.toLowerCase().trim();
-    mapped = mapped.filter((app: any) => {
-      const appBox = (app[4] || "").toLowerCase().trim();
+    filtered = filtered.filter((app: any) => {
+      const appBox = (app.box || "").toLowerCase().trim();
       return appBox === targetBox || appBox.includes(targetBox) || targetBox.includes(appBox);
     });
   }
 
-  return mapped;
+  return filtered;
 }
 
 async function getNextOrderId() {
@@ -227,13 +252,20 @@ async function getNextOrderId() {
 
 async function getServiceDuration(serviceName: string) {
   try {
-    const sheets = await getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: PRICE_SPREADSHEET_ID,
-      range: "C2:E100", // C: Услуга, E: Время обслуживания
-    });
-    const rows = response.data.values || [];
-    const row = rows.find(r => r[0]?.trim() === serviceName.trim());
+    const cacheKey = "prices:all";
+    let rows = getFromCache(cacheKey);
+
+    if (!rows) {
+      const sheets = await getSheetsClient();
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: PRICE_SPREADSHEET_ID,
+        range: "C2:E100", // C: Услуга, E: Время обслуживания
+      });
+      rows = response.data.values || [];
+      setInCache(cacheKey, rows);
+    }
+
+    const row = (rows as any[]).find(r => r[0]?.trim() === serviceName.trim());
     if (!row || !row[2]) return 1;
     
     const durStr = row[2].toLowerCase();
@@ -288,9 +320,9 @@ app.get("/api/schedule/slots", async (req, res) => {
         for (let i = 0; i < duration; i++) {
           const slotHour = h + i;
           const isSlotOccupied = appointments.some((app: any) => {
-            const appStart = parseInt(app[2]);
-            const appDuration = parseInt(app[6] || "1");
-            return app[4] === box && slotHour >= appStart && slotHour < (appStart + appDuration);
+            const appStart = parseInt(app.time);
+            const appDuration = parseInt(app.duration || "1");
+            return app.box === box && slotHour >= appStart && slotHour < (appStart + appDuration);
           });
           if (isSlotOccupied) {
             isBoxFree = false;
@@ -334,9 +366,9 @@ app.post("/api/schedule/book", async (req, res) => {
       for (let i = 0; i < duration; i++) {
         const slotHour = startHour + i;
         const isSlotOccupied = appointments.some((app: any) => {
-          const appStart = parseInt(app[2]);
-          const appDuration = parseInt(app[6] || "1");
-          return app[4] === preferredBox && slotHour >= appStart && slotHour < (appStart + appDuration);
+          const appStart = parseInt(app.time);
+          const appDuration = parseInt(app.duration || "1");
+          return app.box === preferredBox && slotHour >= appStart && slotHour < (appStart + appDuration);
         });
         if (isSlotOccupied) {
           isBoxFree = false;
@@ -354,9 +386,9 @@ app.post("/api/schedule/book", async (req, res) => {
       for (let i = 0; i < duration; i++) {
         const slotHour = startHour + i;
         const isSlotOccupied = appointments.some((app: any) => {
-          const appStart = parseInt(app[2]);
-          const appDuration = parseInt(app[6] || "1");
-          return app[4] === box && slotHour >= appStart && slotHour < (appStart + appDuration);
+          const appStart = parseInt(app.time);
+          const appDuration = parseInt(app.duration || "1");
+          return app.box === box && slotHour >= appStart && slotHour < (appStart + appDuration);
         });
         if (isSlotOccupied) {
           isBoxFree = false;
@@ -373,8 +405,8 @@ app.post("/api/schedule/book", async (req, res) => {
     }
 
     const targetBox = preferredBox || availableBoxes.reduce((prev, curr) => {
-      const prevCount = appointments.filter(a => a[4] === prev).length;
-      const currCount = appointments.filter(a => a[4] === curr).length;
+      const prevCount = appointments.filter((a: any) => a.box === prev).length;
+      const currCount = appointments.filter((a: any) => a.box === curr).length;
       return currCount < prevCount ? curr : prev;
     }, availableBoxes[0]);
 
@@ -415,6 +447,7 @@ app.post("/api/schedule/book", async (req, res) => {
           ]]
         }
       });
+      invalidateCache("appointments");
       return res.json({ success: true, box: targetBox, orderId: allRows[rowIndex][0] });
     }
 
@@ -445,6 +478,7 @@ app.post("/api/schedule/book", async (req, res) => {
       }
     });
 
+    invalidateCache("appointments");
     return res.json({ success: true, box: targetBox, orderId: nextId });
   } catch (error: any) {
     console.error("Schedule booking error:", error);
@@ -457,14 +491,20 @@ app.get("/api/applications/last", async (req, res) => {
     const { sessionId } = req.query;
     if (!sessionId) return res.json(null);
 
-    const sheets = await getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-      range: "booking!A:P",
-    });
+    const cacheKey = "appointments:all";
+    let rows = getFromCache(cacheKey);
 
-    const rows = response.data.values || [];
-    const sessionRows = rows.filter((r: any) => r[10] === sessionId && r[7] === "RAW");
+    if (!rows) {
+      const sheets = await getSheetsClient();
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+        range: "booking!A:P",
+      });
+      rows = response.data.values || [];
+      setInCache(cacheKey, rows);
+    }
+
+    const sessionRows = (rows as any[]).filter((r: any) => r.sessionId === sessionId && r.status === "RAW");
     
     if (sessionRows.length === 0) return res.json(null);
 
@@ -487,14 +527,20 @@ app.get("/api/applications/last", async (req, res) => {
 
 app.get("/api/prices", async (req, res) => {
   try {
-    const sheets = await getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: PRICE_SPREADSHEET_ID,
-      range: "B2:E100",
-    });
+    const cacheKey = "prices:all";
+    let rows = getFromCache(cacheKey);
 
-    const rows = response.data.values || [];
-    const prices = rows.map((row: any) => ({
+    if (!rows) {
+      const sheets = await getSheetsClient();
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: PRICE_SPREADSHEET_ID,
+        range: "B2:E100",
+      });
+      rows = response.data.values || [];
+      setInCache(cacheKey, rows);
+    }
+
+    const prices = (rows as any[]).map((row: any) => ({
       category: row[0] || "",
       service: row[1] || "",
       price: row[2] || "По запросу",
@@ -510,14 +556,20 @@ app.get("/api/prices", async (req, res) => {
 
 app.get("/api/faq/external", async (req, res) => {
   try {
-    const sheets = await getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: FAQ_SPREADSHEET_ID,
-      range: "A2:C100",
-    });
+    const cacheKey = "faq:all";
+    let rows = getFromCache(cacheKey);
 
-    const rows = response.data.values || [];
-    const faqItems = rows.map((row: any) => ({
+    if (!rows) {
+      const sheets = await getSheetsClient();
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: FAQ_SPREADSHEET_ID,
+        range: "A2:C100",
+      });
+      rows = response.data.values || [];
+      setInCache(cacheKey, rows);
+    }
+
+    const faqItems = (rows as any[]).map((row: any) => ({
       category: row[0] || "Общее",
       q: row[1] || "",
       a: row[2] || "",
@@ -579,6 +631,7 @@ app.post("/api/booking", async (req, res) => {
       requestBody: { values },
     });
 
+    invalidateCache("appointments");
     clearTimeout(timeout);
     return res.json({ success: true, message: "Заявка успешно отправлена! Наш ассистент поможет вам подтвердить детали в чате." });
   } catch (error: any) {
@@ -654,27 +707,7 @@ app.get("/api/admin/appointments", async (req, res) => {
     if (!date) return res.json([]);
     
     const apps = await getAppointments(date as string, garage as string, box as string, endDate as string);
-    console.log(`[API] Found ${apps.length} appointments for date: ${date}, endDate: ${endDate}, garage: ${garage}, box: ${box}`);
-    const mapped = apps.map((row: any) => ({
-        orderId: row[0],
-        date: row[1],
-        time: row[2],
-        garage: row[3],
-        box: row[4],
-        service: row[5],
-        duration: parseInt(row[6] || "1"),
-        status: row[7],
-        finishedTime: row[8],
-        note: row[9],
-        sessionId: row[10],
-        clientName: row[11],
-        phone: row[12],
-        car: row[13],
-        whatToDo: row[14],
-        applicationDate: row[15]
-      }));
-      
-    return res.json(mapped);
+    return res.json(apps);
   } catch (err: any) {
     console.error("[API] Admin appointments error:", err);
     return res.status(500).json({ 
@@ -690,35 +723,22 @@ app.get("/api/schedule/find", async (req, res) => {
     const { query } = req.query; // can be phone or name
     if (!query) return res.json([]);
 
-    const sheets = await getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-      range: "booking!A:P",
-    });
-
-    const rows = response.data.values || [];
+    const allMapped = await getAllAppointmentsMapped();
     const searchStr = (query as string).toLowerCase().replace(/\D/g, ""); // strip formatting for phone comparison
     
-    const results = rows.slice(1).filter((row: any) => {
-      const name = (row[11] || "").toLowerCase();
-      const phone = (row[12] || "").replace(/\D/g, "");
-      const comment = (row[14] || "").toLowerCase();
+    const results = allMapped.filter((app: any) => {
+      const name = (app.clientName || "").toLowerCase();
+      const phone = (app.phone || "").replace(/\D/g, "");
+      const comment = (app.comment || "").toLowerCase();
+      const car = (app.car || "").toLowerCase();
       
-      // If query is digits, try phone comparison. Otherwise name or comment.
       if (/^\d+$/.test(searchStr) && searchStr.length > 3) {
         return phone.includes(searchStr);
       }
-      return name.includes((query as string).toLowerCase()) || comment.includes((query as string).toLowerCase());
-    }).map((row: any) => ({
-      orderId: row[0],
-      date: row[1],
-      time: row[2],
-      service: row[5],
-      status: row[7],
-      clientName: row[11],
-      phone: row[12],
-      car: row[13]
-    }));
+      return name.includes((query as string).toLowerCase()) || 
+             comment.includes((query as string).toLowerCase()) ||
+             car.includes((query as string).toLowerCase());
+    });
 
     return res.json(results);
   } catch (err: any) {
@@ -753,6 +773,7 @@ app.post("/api/admin/appointments/status", async (req, res) => {
       }
     });
 
+    invalidateCache("appointments");
     return res.json({ success: true });
   } catch (err: any) {
     console.error("Status update error:", err);
@@ -787,6 +808,7 @@ app.patch("/api/admin/appointments/:orderId/status", async (req, res) => {
       }
     });
 
+    invalidateCache("appointments");
     return res.json({ success: true });
   } catch (err: any) {
     console.error("Status update error:", err);
@@ -843,6 +865,7 @@ app.post("/api/schedule/update", async (req, res) => {
       requestBody: { values: [newRow] }
     });
 
+    invalidateCache("appointments");
     return res.json({ success: true });
   } catch (err: any) {
     console.error("Update error:", err);

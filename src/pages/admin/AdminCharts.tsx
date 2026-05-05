@@ -18,8 +18,30 @@ export default function AdminCharts() {
     const fetchData = async () => {
       const garages = ['Слесарный ремонт и ТО', 'Электрика и диагностика', 'Детейлинг и покрытия'];
       let total = 0;
+      let confirmed = 0;
+      let pending = 0;
       let byGarage = [];
       
+      const isPending = (app: any) => {
+        const status = (app.status || "").toUpperCase();
+        if (status === 'NEW' || status === 'RAW' || status === 'COMPLETED') return true;
+        
+        if (status === 'CONFIRMED') {
+          const now = new Date();
+          let appDateStr = app.date;
+          if (appDateStr && appDateStr.includes('.')) {
+            const [d, m, y] = appDateStr.split('.');
+            appDateStr = `${y}-${m}-${d}`;
+          }
+          const appDate = new Date(appDateStr);
+          const [h, m] = (app.time || "00:00").split(':').map(Number);
+          appDate.setHours(h, m, 0, 0);
+          const endTimestamp = appDate.getTime() + (Number(app.duration) || 1) * 60 * 60 * 1000;
+          return now.getTime() > endTimestamp;
+        }
+        return false;
+      };
+
       for (const g of garages) {
          try {
            let url = `/api/admin/appointments?date=${selectedDate}&garage=${encodeURIComponent(g)}`;
@@ -31,6 +53,8 @@ export default function AdminCharts() {
              if (contentType && contentType.includes("application/json")) {
                const data = await res.json();
                total += data.length;
+               confirmed += data.filter((a: any) => (a.status || "").toUpperCase() === 'CONFIRMED').length;
+               pending += data.filter(isPending).length;
                byGarage.push({ name: g.replace(' и ', ' & '), value: data.length });
              } else {
                byGarage.push({ name: g.replace(' и ', ' & '), value: 0 });
@@ -46,8 +70,8 @@ export default function AdminCharts() {
 
       setStats({
         total,
-        confirmed: Math.floor(total * 0.8), // Simplified for demo, in real it should come from actual data statuses
-        new: Math.ceil(total * 0.2),
+        confirmed,
+        new: pending,
         byGarage
       });
     };

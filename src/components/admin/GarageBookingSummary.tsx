@@ -198,88 +198,108 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
     : isToday(date) 
       ? 'Записей на сегодня' 
       : `Записей на ${formatDate(date)}`;
-  const sidebarLabel = activeService !== 'General' ? "БОКСЫ" : currentLabel;
+  const sidebarLabel = currentLabel;
 
   if (isSidebar) {
     return (
       <div className="flex flex-col gap-6 p-4">
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent-orange animate-pulse" />
-            {sidebarLabel}
+        {!pendingFilter && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-orange animate-pulse" />
+              {sidebarLabel}
+            </div>
+            
+              <div className="space-y-1">
+              {[
+                { label: 'Все', value: statusCounts.all, color: 'text-white' },
+                { label: 'Новые', value: statusCounts.new, color: 'text-yellow-400' },
+                { label: 'Отмененные', value: statusCounts.cancelled, color: 'text-red-400' },
+                { label: 'Подтвержденные', value: statusCounts.confirmed, color: 'text-green-400' },
+                { label: 'Завершенные', value: statusCounts.completed, color: 'text-blue-400' },
+                { label: 'Закрытые', value: statusCounts.closed, color: 'text-gray-400' }
+              ].map(s => (
+                <button 
+                  key={s.label} 
+                  onClick={() => handleStatusClick(s.label === 'Все' ? 'Все' : s.label)}
+                  className={`w-full flex justify-between items-center rounded-lg px-3 py-[3px] border transition-all active:scale-[0.98] ${
+                    (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter
+                      ? 'bg-white/10 border-white/20 shadow-lg' 
+                      : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
+                  }`}
+                >
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                    ((activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter) ? 'text-white' : ''
+                  }`} style={{ color: ((activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter) ? undefined : '#e1e1e1' }}>{s.label}</span>
+                  <span className={`text-xs font-black ${
+                    ((activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter) ? 'text-white' : s.color
+                  }`}>{loading ? '...' : s.value}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          
+        )}
+
+        {(!pendingFilter) && <div className="h-px bg-white/5" />}
+
+        {pendingFilter && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
+              <AlertTriangle className="w-4 h-4 text-yellow-500 animate-[pulse_2s_infinite] drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+              В ожидании обработки:
+            </div>
             <div className="space-y-1">
-            {[
-              { label: 'Все', value: statusCounts.all, color: 'text-white' },
-              { label: 'Новые', value: statusCounts.new, color: 'text-yellow-400' },
-              { label: 'Отмененные', value: statusCounts.cancelled, color: 'text-red-400' },
-              { label: 'Подтвержденные', value: statusCounts.confirmed, color: 'text-green-400' },
-              { label: 'Завершенные', value: statusCounts.completed, color: 'text-blue-400' },
-              { label: 'Закрытые', value: statusCounts.closed, color: 'text-gray-400' }
-            ].map(s => (
-              <button 
-                key={s.label} 
-                onClick={() => handleStatusClick(s.label === 'Все' ? 'Все' : s.label)}
-                className={`w-full flex justify-between items-center rounded-lg px-3 py-[3px] border transition-all active:scale-[0.98] ${
-                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter
-                    ? 'bg-white/10 border-white/20 shadow-lg' 
-                    : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
-                }`}
-              >
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                  ((activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter) ? 'text-white' : 'text-gray-500'
-                }`}>{s.label}</span>
-                <span className={`text-xs font-black ${
-                  ((activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter) ? 'text-white' : s.color
-                }`}>{loading ? '...' : s.value}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="h-px bg-white/5" />
-
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
-            <AlertTriangle className="w-4 h-4 text-yellow-500 animate-[pulse_2s_infinite] drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
-            В ожидании обработки:
-          </div>
-          <div className="space-y-1">
-            {[
-              { 
-                id: 'today' as const, 
-                label: `НА ${endDate ? `${formatDate(date)} - ${formatDate(endDate)}` : formatDate(date)}`, 
-                count: globalTodayApps.filter(isPending).length 
-              },
-              { id: 'all' as const, label: 'Всего', count: totalAppointments.filter(isPending).length }
-            ].map(p => (
-              <button 
-                key={p.id} 
-                onClick={() => {
-                  if (pendingFilter === p.id) {
-                    setPendingFilter(null);
-                  } else {
+              {[
+                { id: 'all' as const, label: 'Всего', code: 'Все' },
+                { id: 'all' as const, label: 'Новые', code: 'Новые' },
+                { id: 'all' as const, label: 'Завершенные', code: 'Завершенные' },
+                { id: 'all' as const, label: 'Просроченные', code: 'Просроченные' }
+              ].map(p => (
+                <button 
+                  key={p.label} 
+                  onClick={() => {
                     setPendingFilter(p.id);
-                    setActiveService('General');
-                  }
-                }}
-                className={`w-full flex justify-between items-center rounded-lg px-3 py-[3px] border transition-all active:scale-[0.98] ${
-                  pendingFilter === p.id 
-                    ? 'bg-accent-orange/10 border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
-                    : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
-                }`}
-              >
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                  pendingFilter === p.id ? 'text-accent-orange' : 'text-gray-500'
-                }`}>{p.label}</span>
-                <span className={`text-xs font-black ${
-                  pendingFilter === p.id ? 'text-accent-orange' : 'text-white'
-                }`}>{loading ? '...' : p.count}</span>
-              </button>
-            ))}
+                    setActiveStatus(p.code);
+                  }}
+                  className={`w-full flex justify-between items-center rounded-lg px-3 py-[3px] border transition-all active:scale-[0.98] ${
+                    pendingFilter === p.id && (activeStatus || 'Все') === p.code
+                      ? 'bg-accent-orange/10 border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                      : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
+                  }`}
+                >
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                    pendingFilter === p.id && (activeStatus || 'Все') === p.code ? 'text-accent-orange' : ''
+                  }`} style={{ color: pendingFilter === p.id && (activeStatus || 'Все') === p.code ? undefined : '#e1e1e1' }}>{p.label}</span>
+                  <span className={`text-xs font-black ${
+                    pendingFilter === p.id && (activeStatus || 'Все') === p.code ? 'text-accent-orange' : 'text-white'
+                  }`}>
+                    {loading ? '...' : totalAppointments.filter(isPending).filter(app => {
+                      if (p.code === 'Все') return true;
+                      const s = (app.status || "").toUpperCase();
+                      if (p.code === 'Новые') return s === 'NEW' || s === 'RAW';
+                      if (p.code === 'Завершенные') return s === 'COMPLETED';
+                      if (p.code === 'Просроченные') {
+                        if (s !== 'CONFIRMED') return false;
+                        const now = new Date();
+                        let appDateStr = app.date;
+                        if (appDateStr && appDateStr.includes('.')) {
+                          const [d, m, y] = appDateStr.split('.');
+                          appDateStr = `${y}-${m}-${d}`;
+                        }
+                        const appDate = new Date(appDateStr);
+                        const [h, m] = (app.time || "00:00").split(':').map(Number);
+                        appDate.setHours(h, m, 0, 0);
+                        const endTs = appDate.getTime() + (Number(app.duration) || 1) * 60 * 60 * 1000;
+                        return now.getTime() > endTs;
+                      }
+                      return true;
+                    }).length}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }

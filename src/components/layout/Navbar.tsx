@@ -18,7 +18,8 @@ import {
   Zap,
   Sparkles,
   LayoutGrid,
-  List
+  List,
+  AlertTriangle
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -39,6 +40,28 @@ const services = [
   { id: 'Diagnostic', label: 'Электрика', fullLabel: 'Электрика и диагностика', icon: Zap },
   { id: 'Detailing', label: 'Детейлинг', fullLabel: 'Детейлинг и покрытия', icon: Sparkles },
 ];
+
+const isPending = (app: any) => {
+  const status = (app.status || "").toUpperCase();
+  if (status === 'NEW' || status === 'RAW' || status === 'COMPLETED') return true;
+  
+  if (status === 'CONFIRMED') {
+    const now = new Date();
+    let appDateStr = app.date;
+    if (appDateStr && appDateStr.includes('.')) {
+      const [d, m, y] = appDateStr.split('.');
+      appDateStr = `${y}-${m}-${d}`;
+    }
+    const appDate = new Date(appDateStr);
+    const [h, m] = (app.time || "00:00").split(':').map(Number);
+    appDate.setHours(h, m, 0, 0);
+    
+    const duration = Number(app.duration) || 1;
+    const endTimestamp = appDate.getTime() + duration * 60 * 60 * 1000;
+    return now.getTime() > endTimestamp;
+  }
+  return false;
+};
 
 const adminDropdownLinks = [
   { 
@@ -95,12 +118,21 @@ export default function Navbar() {
     setActiveView,
     activeBox,
     setActiveBox,
+    activeStatus,
+    setActiveStatus,
+    pendingFilter,
+    setPendingFilter,
+    hasDoneInitialRedirect,
+    setHasDoneInitialRedirect,
     isSidebarOpen,
     setIsSidebarOpen
   } = useAdminStore();
 
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [allPendingAppointments, setAllPendingAppointments] = useState<any[]>([]);
+  const [totalPendingCount, setTotalPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
+
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('ru-RU', { hour12: false, timeZone: 'Europe/Moscow' }));
   const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('ru-RU', { 
     day: '2-digit', 
@@ -126,17 +158,34 @@ export default function Navbar() {
   useEffect(() => {
     if (!isAdmin) return;
 
-    const fetchApps = async () => {
+    const fetchApps = async (isInitial = false) => {
       try {
         let url = `/api/admin/appointments?date=${selectedDate}`;
         if (endDate) url += `&endDate=${endDate}`;
         
-        const res = await fetch(url);
-        if (res.ok) {
-          const contentType = res.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const data = await res.json();
-            setAppointments(data);
+        const [res, pendingRes] = await Promise.all([
+          fetch(url),
+          fetch(`/api/admin/appointments?date=2000-01-01&endDate=2099-12-31`)
+        ]);
+
+        if (res.ok && pendingRes.ok) {
+          const data = await res.json();
+          const pendingData = await pendingRes.json();
+          setAppointments(data);
+          const filteredPending = pendingData.filter(isPending);
+          setAllPendingAppointments(filteredPending);
+          setTotalPendingCount(filteredPending.length);
+          
+          if (isInitial && !hasDoneInitialRedirect) {
+            setHasDoneInitialRedirect(true);
+            if (filteredPending.length > 0) {
+              setActiveService('General');
+              setPendingFilter('all');
+              setActiveStatus('Все');
+            } else {
+              setPendingFilter(null);
+              setActiveService('General');
+            }
           }
         }
       } catch (err) {
@@ -146,10 +195,10 @@ export default function Navbar() {
       }
     };
 
-    fetchApps();
-    const interval = setInterval(fetchApps, 30000); // Polling every 30s for navbar counts is fine
+    fetchApps(true);
+    const interval = setInterval(() => fetchApps(false), 30000); // Polling every 30s for navbar counts is fine
     return () => clearInterval(interval);
-  }, [selectedDate, endDate, isAdmin]);
+  }, [selectedDate, endDate, isAdmin, hasDoneInitialRedirect]);
 
   const getServiceCount = (id: string, fullLabel: string) => {
     if (id === 'General') return appointments.length;
@@ -180,7 +229,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-graphite/80 backdrop-blur-xl border-b border-white/5">
+    <nav className="fixed top-0 left-0 right-0 z-[9000] bg-graphite/80 backdrop-blur-xl border-b border-white/5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className={`flex justify-between items-center ${isAdmin ? 'py-2 min-h-[5rem]' : 'h-20'}`}>
           <div className="flex flex-col shrink-0">
@@ -193,7 +242,7 @@ export default function Navbar() {
               </span>
             </Link>
             {isAdmin && (
-              <div className="mt-1 ml-10 flex flex-col items-start">
+              <div className="mt-1 ml-10 flex flex-col items-start relative z-[9001]">
                 <CompactCalendar 
                   selectedDate={selectedDate} 
                   endDate={endDate}
@@ -217,7 +266,8 @@ export default function Navbar() {
                   </div>
                   <div 
                     onClick={() => {
-                      const today = new Date().toISOString().split('T')[0];
+                      const moscowTime = new Date().toLocaleString('en-CA', { timeZone: 'Europe/Moscow', hour12: false });
+                      const today = moscowTime.split(',')[0];
                       setSelectedDate(today);
                       setEndDate(null);
                     }}
@@ -225,12 +275,14 @@ export default function Navbar() {
                     style={{ 
                       fontStyle: 'normal',
                       fontWeight: 'normal',
-                      textDecorationLine: 'underline',
+                      textDecorationLine: 'none',
                       fontSize: '10px',
                       textAlign: 'center',
                       color: '#ad9353',
                       lineHeight: '14px',
-                      fontFamily: 'Courier New'
+                      fontFamily: 'Courier New',
+                      paddingTop: '3px',
+                      marginTop: '0px'
                     }}
                   >
                     {currentDate}
@@ -245,16 +297,45 @@ export default function Navbar() {
             <div className="hidden lg:flex flex-col items-start gap-2 flex-grow px-8 py-1">
               {/* Service Selection Tabs */}
               <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
+                {/* Unprocessed Applications Button */}
+                <button
+                  onClick={() => {
+                    setActiveService('General');
+                    setActiveBox('Все');
+                    setActiveView('log');
+                    setPendingFilter('all');
+                    setActiveStatus('Все');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
+                    pendingFilter === 'all'
+                      ? 'bg-[#ffbf00]/10 text-[#ffbf00] border-[#ffbf00] shadow-[0_0_15px_rgba(255,191,0,0.1)]' 
+                      : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
+                  }`}
+                >
+                  <AlertTriangle 
+                    className="w-[18px] h-[18px]" 
+                    style={{ color: '#ffbf00' }} 
+                  />
+                  {!loading && (
+                    <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[12px] font-black transition-colors ${
+                      pendingFilter === 'all' ? 'text-black bg-[#ffbf00]' : 'text-[#ffbf00] bg-[#393434]'
+                    }`}>
+                      {totalPendingCount}
+                    </span>
+                  )}
+                </button>
+
                 {services.map((service) => (
                   <button
                     key={service.id}
                     onClick={() => {
+                      setPendingFilter(null);
                       setActiveService(service.id as ServiceType);
                       setActiveBox('Все');
-                      setActiveView('log');
+                      setActiveView('grid');
                     }}
                     className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
-                      activeService === service.id 
+                      activeService === service.id && !pendingFilter
                         ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
                         : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
                     }`}
@@ -263,7 +344,7 @@ export default function Navbar() {
                     {service.fullLabel}
                     {!loading && (
                       <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[12px] font-black border-none transition-colors ${
-                        activeService === service.id ? 'text-white bg-accent-orange' : 'text-accent-orange bg-[#393434]'
+                        activeService === service.id && !pendingFilter ? 'text-white bg-accent-orange' : 'text-accent-orange bg-[#393434]'
                       }`}>
                         {getServiceCount(service.id, service.fullLabel)}
                       </span>
@@ -274,7 +355,68 @@ export default function Navbar() {
 
               {/* View & Box Toggles - Fixed height container to prevent layout shifts */}
               <div className="h-8 flex items-center gap-2">
-                {activeService !== 'General' ? (
+                {pendingFilter === 'all' ? (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-2"
+                  >
+                    <div className="flex gap-1 items-center bg-white/5 p-1 rounded-xl border border-white/5 h-fit">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-[#eab938]">
+                        <AlertTriangle className="w-3 h-3" />
+                        НЕОБРАБОТАННЫЕ ЗАПИСИ:
+                      </div>
+                    </div>
+
+                    <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
+                      {[
+                        { label: 'ВСЕ', code: 'Все' }, 
+                        { label: 'НОВЫЕ', code: 'Новые' }, 
+                        { label: 'ЗАВЕРШЕННЫЕ', code: 'Завершенные' }, 
+                        { label: 'ПРОСРОЧЕННЫЕ', code: 'Просроченные' }
+                      ].map((filter) => (
+                        <button
+                          key={filter.code}
+                          onClick={() => setActiveStatus(filter.code)}
+                          className={`px-3 py-1.5 h-[33px] rounded-lg text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 border ${
+                            (activeStatus || 'Все') === filter.code 
+                              ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                              : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
+                          }`}
+                        >
+                          {filter.label}
+                          {!loading && (
+                            <span className={`px-1.5 rounded text-[12px] font-black border border-white/5 transition-colors ${
+                              (activeStatus || 'Все') === filter.code ? 'bg-accent-orange text-white border-transparent' : 'bg-[#393434] text-accent-orange'
+                            }`}>
+                              {allPendingAppointments.filter(app => {
+                                if (filter.code === 'Все') return true;
+                                const s = (app.status || "").toUpperCase();
+                                if (filter.code === 'Новые') return s === 'NEW' || s === 'RAW';
+                                if (filter.code === 'Завершенные') return s === 'COMPLETED';
+                                if (filter.code === 'Просроченные') {
+                                  if (s !== 'CONFIRMED') return false;
+                                  const now = new Date();
+                                  let appDateStr = app.date;
+                                  if (appDateStr && appDateStr.includes('.')) {
+                                    const [d, m, y] = appDateStr.split('.');
+                                    appDateStr = `${y}-${m}-${d}`;
+                                  }
+                                  const appDate = new Date(appDateStr);
+                                  const [h, m] = (app.time || "00:00").split(':').map(Number);
+                                  appDate.setHours(h, m, 0, 0);
+                                  const endTs = appDate.getTime() + (Number(app.duration) || 1) * 60 * 60 * 1000;
+                                  return now.getTime() > endTs;
+                                }
+                                return true;
+                              }).length}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                ) : activeService !== 'General' ? (
                   <motion.div 
                     initial={{ opacity: 0, y: -5 }}
                     animate={{ opacity: 1, y: 0 }}
