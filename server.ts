@@ -953,9 +953,26 @@ app.post("/api/admin/prompts/restore", (req, res) => {
 });
 
 async function startServer() {
-  console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`[Server] Environment: ${process.env.NODE_ENV || "development"}`);
+
+  // Listen immediately so the AI Studio proxy stops showing "Starting Server"
+  app
+    .listen(PORT, "0.0.0.0", () => {
+      console.log(`\n\n[Server] ==========================================`);
+      console.log(`[Server] READY: Server running on http://0.0.0.0:${PORT}`);
+      console.log(`[Server] Environment: ${process.env.NODE_ENV}`);
+      console.log(`[Server] ==========================================\n\n`);
+    })
+    .on("error", (err: any) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(`Port ${PORT} is already in use`);
+      } else {
+        console.error("Server error:", err);
+      }
+    });
+
   if (process.env.NODE_ENV !== "production") {
-    console.log("[Server] Starting Vite in middleware mode...");
+    console.log("[Server] starting Vite in middleware mode...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -969,19 +986,6 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`\n\n[Server] ==========================================`);
-    console.log(`[Server] READY: Server running on http://0.0.0.0:${PORT}`);
-    console.log(`[Server] Environment: ${process.env.NODE_ENV}`);
-    console.log(`[Server] ==========================================\n\n`);
-  }).on('error', (err: any) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Port ${PORT} is already in use`);
-    } else {
-      console.error('Server error:', err);
-    }
-  });
 }
 
 startServer();

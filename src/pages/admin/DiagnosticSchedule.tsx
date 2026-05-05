@@ -7,8 +7,8 @@ import ExpandedCalendar from '../../components/admin/ExpandedCalendar';
 import GarageBookingSummary from '../../components/admin/GarageBookingSummary';
 
 export default function DiagnosticSchedule() {
-  const [activeTab, setActiveTab] = useState<'grid' | 'log'>('log');
-  const { selectedDate, setSelectedDate, activeBox } = useAdminStore();
+  const [activeTab, setActiveTab ] = useState<'grid' | 'log'>('log');
+  const { selectedDate, endDate, setSelectedDate, activeBox } = useAdminStore();
 
   return (
     <div className="space-y-8">
@@ -17,7 +17,7 @@ export default function DiagnosticSchedule() {
           <div className="bg-graphite-light p-8 rounded-3xl border border-white/5 h-full flex flex-col justify-center">
             <h1 className="text-4xl font-bold tracking-tight text-white mb-2">Электрика и диагностика</h1>
             <p className="text-gray-400 text-lg">Управление боксами диагностического цеха</p>
-            <GarageBookingSummary date={selectedDate} garageFilter="Электрика и диагностика" />
+            <GarageBookingSummary date={selectedDate} endDate={endDate} garageFilter="Электрика и диагностика" />
           </div>
         </div>
         <div>
@@ -51,9 +51,9 @@ export default function DiagnosticSchedule() {
       </div>
 
       {activeTab === 'grid' ? (
-        <ScheduleGrid garage="Электрика и диагностика" date={selectedDate} boxFilter={activeBox} />
+        <ScheduleGrid garage="Электрика и диагностика" date={selectedDate} endDate={endDate} boxFilter={activeBox} />
       ) : (
-        <AppointmentTable date={selectedDate} garageFilter="Электрика и диагностика" boxFilter={activeBox} />
+        <AppointmentTable date={selectedDate} endDate={endDate} garageFilter="Электрика и диагностика" boxFilter={activeBox} />
       )}
     </div>
   );

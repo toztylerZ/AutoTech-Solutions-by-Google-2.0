@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { useAdminStore } from '../../store/adminStore';
+import { useAdminStore, getServiceIdFromGarage } from '../../store/adminStore';
+import EditAppointmentModal from './EditAppointmentModal';
+import { AnimatePresence } from 'motion/react';
 
 interface Appointment {
   orderId: string;
@@ -22,6 +24,7 @@ interface AppointmentTableProps {
   endDate?: string | null;
   garageFilter?: string;
   boxFilter?: string;
+  pendingMode?: 'today' | 'all' | null;
 }
 
 type SortConfig = {
@@ -29,12 +32,30 @@ type SortConfig = {
   direction: 'asc' | 'desc';
 };
 
-export default function AppointmentTable({ date, endDate, garageFilter, boxFilter }: AppointmentTableProps) {
+export default function AppointmentTable({ date, endDate, garageFilter, boxFilter, pendingMode }: AppointmentTableProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'time', direction: 'asc' });
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const { activeStatus } = useAdminStore();
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const { 
+    activeStatus, 
+    setActiveService, 
+    setActiveView, 
+    highlightedOrderId, 
+    setHighlightedOrderId,
+    setSelectedDate,
+    setEndDate
+  } = useAdminStore();
+
+  useEffect(() => {
+    if (highlightedOrderId) {
+      const timer = setTimeout(() => {
+        setHighlightedOrderId(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedOrderId]);
 
   const STATUS_OPTIONS = [
     { label: 'НОВАЯ', code: 'NEW' },
@@ -67,8 +88,14 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
 
   const fetchAppointments = async () => {
     try {
-      let url = `/api/admin/appointments?date=${date}`;
-      if (endDate) url += `&endDate=${endDate}`;
+      let url = '';
+      if (pendingMode === 'all') {
+        url = `/api/admin/appointments?date=2000-01-01&endDate=2099-12-31`;
+      } else {
+        url = `/api/admin/appointments?date=${date}`;
+        if (endDate) url += `&endDate=${endDate}`;
+      }
+
       if (garageFilter) url += `&garage=${encodeURIComponent(garageFilter)}`;
       if (boxFilter && boxFilter !== 'Все') url += `&box=${encodeURIComponent(boxFilter)}`;
       
@@ -78,9 +105,6 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
         if (contentType && contentType.includes("application/json")) {
           const data = await res.json();
           setAppointments(data);
-        } else {
-          const text = await res.text();
-          console.error('Expected JSON but got:', text.substring(0, 500));
         }
       } else {
         const text = await res.text();
@@ -97,10 +121,35 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
     fetchAppointments();
     const interval = setInterval(fetchAppointments, 5000);
     return () => clearInterval(interval);
-  }, [date, endDate, garageFilter, boxFilter]);
+  }, [date, endDate, garageFilter, boxFilter, pendingMode]);
+
+  const isPending = (app: Appointment) => {
+    const status = (app.status || "").toUpperCase();
+    if (status === 'NEW' || status === 'RAW' || status === 'COMPLETED') return true;
+    
+    if (status === 'CONFIRMED') {
+      const now = new Date();
+      let appDateStr = app.date;
+      if (appDateStr.includes('.')) {
+        const [d, m, y] = appDateStr.split('.');
+        appDateStr = `${y}-${m}-${d}`;
+      }
+      const appDate = new Date(appDateStr);
+      const [h, m] = (app.time || "00:00").split(':').map(Number);
+      appDate.setHours(h, m, 0, 0);
+      
+      const endTimestamp = appDate.getTime() + (Number(app.duration) || 1) * 60 * 60 * 1000;
+      return now.getTime() > endTimestamp;
+    }
+    return false;
+  };
 
   const sortedAppointments = useMemo(() => {
     let filteredItems = [...appointments];
+
+    if (pendingMode) {
+      filteredItems = filteredItems.filter(isPending);
+    }
 
     if (activeStatus && activeStatus !== 'Все') {
       filteredItems = filteredItems.filter(app => {
@@ -193,18 +242,55 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
     }
   };
 
+  const handleTimeClick = (e: React.MouseEvent, app: Appointment) => {
+    e.stopPropagation();
+    
+    // Normalize date to yyyy-mm-dd
+    let targetDate = app.date;
+    if (targetDate.includes('.')) {
+      const [d, m, y] = targetDate.split('.');
+      targetDate = `${y}-${m}-${d}`;
+    }
+    
+    setSelectedDate(targetDate);
+    setEndDate(null);
+    
+    const serviceId = getServiceIdFromGarage(app.garage);
+    setActiveService(serviceId);
+    setActiveView('grid');
+    setHighlightedOrderId(app.orderId);
+  };
+
+  const handleServiceClick = (e: React.MouseEvent, app: Appointment) => {
+    e.stopPropagation();
+    const serviceId = getServiceIdFromGarage(app.garage);
+    setActiveService(serviceId);
+    setActiveView('log');
+    setHighlightedOrderId(app.orderId);
+  };
+
+  const showDateColumn = !!endDate || !!pendingMode;
+
   return (
-    <div className="bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl">
-      <div className="overflow-x-auto">
+    <div className="bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl w-full">
+      <div className="overflow-auto max-h-[calc(100vh-120px)] relative">
         <table className="w-full text-left border-collapse font-sans">
-          <thead>
-            <tr className="bg-black/40 border-b border-white/10">
+          <thead className="sticky top-0 z-40 bg-graphite-light shadow-2xl">
+            <tr className="bg-black border-b border-white/10">
               <th 
                 onClick={() => handleSort('orderId')}
                 className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest pl-8 cursor-pointer hover:text-white transition-colors"
               >
                 <div className="flex items-center gap-1">ID <SortIcon column="orderId" /></div>
               </th>
+              {showDateColumn && (
+                <th 
+                  onClick={() => handleSort('date')}
+                  className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
+                >
+                  <div className="flex items-center gap-1">Дата <SortIcon column="date" /></div>
+                </th>
+              )}
               <th 
                 onClick={() => handleSort('time')}
                 className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest cursor-pointer hover:text-white transition-colors"
@@ -249,11 +335,11 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
           <tbody className="divide-y divide-white/5">
             {loading ? (
               <tr>
-                <td colSpan={7} className="p-12 text-center text-gray-500 animate-pulse font-medium">Загрузка данных...</td>
+                <td colSpan={showDateColumn ? 8 : 7} className="p-12 text-center text-gray-500 animate-pulse font-medium">Загрузка данных...</td>
               </tr>
             ) : sortedAppointments.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-12 text-center text-gray-500 font-medium">Записей не найдено</td>
+                <td colSpan={showDateColumn ? 8 : 7} className="p-12 text-center text-gray-500 font-medium">Записей не найдено</td>
               </tr>
             ) : (
               sortedAppointments.map((app, idx) => (
@@ -262,34 +348,44 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.05 }}
                   key={`${app.orderId}-${idx}`} 
-                  className="hover:bg-white/5 transition-colors group"
+                  onDoubleClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest('button')) return;
+                    setEditingAppointment(app);
+                  }}
+                  className={`hover:bg-white/5 transition-colors group cursor-pointer ${app.orderId === highlightedOrderId ? 'bg-accent-orange/10 border-l-2 border-accent-orange' : ''}`}
                 >
                   <td className="p-4 pl-8 font-mono text-xs text-gray-500">#{app.orderId || '—'}</td>
-                  <td className="p-4">
+                  {showDateColumn && (
+                    <td className="p-4 text-xs text-gray-400 font-bold whitespace-nowrap">
+                      {app.date}
+                    </td>
+                  )}
+                  <td className="p-4" onClick={(e) => handleTimeClick(e, app)}>
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-black px-2 py-1 rounded border transition-all ${getStatusStyle(app.status)}`}>
-                        {app.time || '--:--'}
+                      <span className={`text-[12px] font-black px-2 py-1 rounded border transition-all cursor-pointer hover:scale-105 active:scale-95 ${getStatusStyle(app.status)}`}>
+                        &nbsp;{app.time || '--:--'}
                       </span>
                       {app.duration > 1 && (
-                        <span className="text-[10px] text-gray-600 font-bold">({app.duration}ч)</span>
+                        <span className="text-[10px] text-gray-600 font-bold">({app.duration} ч)</span>
                       )}
                     </div>
                   </td>
-                  <td className="p-4 align-top">
+                  <td className="p-4 align-top" onClick={(e) => handleServiceClick(e, app)}>
                     <div className="flex flex-col gap-1 items-start">
                       {garageFilter ? (
                         <>
-                          <span className={`text-[9px] font-black uppercase tracking-tight px-2 py-0.5 rounded-full border ${getServiceStyle(app.garage)}`}>
+                          <span className={`text-[9px] font-black uppercase tracking-tight px-2 py-0.5 rounded-full border cursor-pointer hover:brightness-110 transition-all ${getServiceStyle(app.garage)}`}>
                             {app.service || '—'}
                           </span>
-                          <span className="text-[8px] text-gray-500 font-bold tracking-widest uppercase italic text-left">{app.garage}</span>
+                          <span className="text-[8px] text-[#6a7282] font-bold tracking-widest uppercase italic text-left">{app.garage}</span>
                         </>
                       ) : (
                         <>
-                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${getServiceStyle(app.garage)}`}>
+                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border cursor-pointer hover:brightness-110 transition-all ${getServiceStyle(app.garage)}`}>
                             {app.garage || 'Не распределено'}
                           </span>
-                          <span className={`text-[8px] font-bold uppercase tracking-widest pl-1 italic text-left ${getServiceStyle(app.garage).split(' ')[0]}`}>
+                          <span className="text-[8px] text-[#6a7282] font-bold uppercase tracking-widest pl-1 italic text-left">
                             {app.service}
                           </span>
                         </>
@@ -350,6 +446,18 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
           </tbody>
         </table>
       </div>
+
+      <AnimatePresence>
+        {editingAppointment && (
+          <EditAppointmentModal
+            appointment={editingAppointment}
+            onClose={() => setEditingAppointment(null)}
+            onSave={(updated) => {
+              setAppointments(prev => prev.map(a => a.orderId === updated.orderId ? { ...a, ...updated } : a));
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

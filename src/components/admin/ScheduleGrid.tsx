@@ -19,7 +19,16 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
   const [loading, setLoading] = useState(true);
   const [editingAppointment, setEditingAppointment] = useState<any | null>(null);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const { activeStatus } = useAdminStore();
+  const { activeStatus, highlightedOrderId, setHighlightedOrderId } = useAdminStore();
+
+  useEffect(() => {
+    if (highlightedOrderId) {
+      const timer = setTimeout(() => {
+        setHighlightedOrderId(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedOrderId]);
 
   const STATUS_OPTIONS = [
     { label: 'НОВАЯ', code: 'NEW' },
@@ -40,9 +49,6 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
           if (contentType && contentType.includes("application/json")) {
             const data = await res.json();
             setAppointments(data);
-          } else {
-            const text = await res.text();
-            console.error('Expected JSON but got:', text.substring(0, 500));
           }
         }
       } catch (err) {
@@ -137,14 +143,14 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
   if (loading) return <div className="p-20 text-center animate-pulse text-gray-500">Загрузка расписания...</div>;
 
   return (
-    <div className="bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl">
-      <div className="overflow-x-auto">
+    <div className="bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl w-full">
+      <div className="overflow-auto max-h-[calc(100vh-120px)] relative">
         <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-black/40 border-b border-white/10">
+          <thead className="sticky top-0 z-40 bg-graphite-light shadow-2xl">
+            <tr className="bg-black border-b border-white/10">
               <th className="p-4 border-r border-white/10 w-24"></th>
               {displayedBoxes.map(box => (
-                <th key={box} className="p-4 text-center">
+                <th key={box} className="p-4 text-center border-b border-white/10">
                   <div className="flex flex-col items-center gap-1">
                     <Box className="w-4 h-4 text-accent-orange" />
                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{box}</span>
@@ -177,8 +183,18 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
                       {app ? (
                         <motion.div
                           initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          onDoubleClick={() => setEditingAppointment(app)}
+                          animate={{ 
+                            opacity: 1, 
+                            scale: 1,
+                            boxShadow: app.orderId === highlightedOrderId ? '0 0 20px rgba(255, 165, 0, 0.4)' : 'none',
+                            outline: app.orderId === highlightedOrderId ? '2px solid rgba(255, 165, 0, 0.5)' : 'none'
+                          }}
+                          onDoubleClick={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.closest('button')) return;
+                            setEditingAppointment(app);
+                          }}
+                          onClick={() => setHighlightedOrderId(app.orderId)}
                           className={`absolute inset-1 border rounded-xl p-2.5 flex flex-col justify-between group/card transition-all shadow-lg ${getStatusColor(app.status)} hover:shadow-2xl cursor-pointer select-none ${activeMenu === app.orderId ? 'z-50' : 'z-10'}`}
                         >
                           <div className="flex justify-between items-start gap-2">

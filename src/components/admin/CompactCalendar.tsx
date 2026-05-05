@@ -80,7 +80,7 @@ export default function CompactCalendar({ selectedDate, endDate, onRangeChange }
     <div className="relative">
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 text-[10px] font-bold text-accent-orange hover:text-gray-500 transition-colors uppercase tracking-wider"
+        className="flex items-center gap-2 text-[11px] font-bold text-accent-orange hover:text-gray-500 transition-colors uppercase tracking-wider"
       >
         <CalendarIcon className="w-3 h-3" />
         {formattedLabel}

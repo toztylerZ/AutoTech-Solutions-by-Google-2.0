@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "NODE_ENV=development tsx server.ts",
-    "build": "vite build",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "start": "tsx server.ts"
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -20,6 +20,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.28.0",
     "express": "^4.21.2",
     "google-auth-library": "^9.15.0",
     "googleapis": "^171.4.0",
@@ -37,7 +38,5 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "zustand": "^5.0.12"
-  },
-  "devDependencies": {
   }
 }

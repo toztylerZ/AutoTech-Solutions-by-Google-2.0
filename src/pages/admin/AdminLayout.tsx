@@ -50,8 +50,8 @@ export default function AdminLayout() {
       </motion.aside>
 
       {/* Main Content Area */}
-      <main className="flex-grow p-8 pt-2 bg-[#050505]">
-        <div className="max-w-7xl mx-auto">
+      <main className="flex-grow ml-2 pt-2 pb-0 bg-[#050505]">
+        <div className="w-full h-full">
           <Outlet />
         </div>
       </main>

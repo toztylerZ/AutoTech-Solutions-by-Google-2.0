@@ -10,6 +10,8 @@ interface AdminState {
   activeView: ViewType;
   activeBox: string;
   activeStatus: string | null;
+  highlightedOrderId: string | null;
+  pendingFilter: 'today' | 'all' | null;
   isSidebarOpen: boolean;
   setSelectedDate: (date: string) => void;
   setEndDate: (date: string | null) => void;
@@ -17,6 +19,8 @@ interface AdminState {
   setActiveView: (view: ViewType) => void;
   setActiveBox: (box: string) => void;
   setActiveStatus: (status: string | null) => void;
+  setHighlightedOrderId: (orderId: string | null) => void;
+  setPendingFilter: (filter: 'today' | 'all' | null) => void;
   setIsSidebarOpen: (isOpen: boolean) => void;
 }
 
@@ -35,6 +39,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   activeView: (localStorage.getItem('admin_active_view') as ViewType) || 'log',
   activeBox: localStorage.getItem('admin_active_box') || 'Все',
   activeStatus: null,
+  highlightedOrderId: null,
+  pendingFilter: null,
   isSidebarOpen: localStorage.getItem('admin_sidebar_open') !== 'false',
   setSelectedDate: (date) => {
     localStorage.setItem('admin_selected_date', date);
@@ -50,19 +56,28 @@ export const useAdminStore = create<AdminState>((set) => ({
   },
   setActiveService: (service) => {
     localStorage.setItem('admin_active_service', service);
-    set({ activeService: service });
+    set({ activeService: service, pendingFilter: null });
   },
   setActiveView: (view) => {
     localStorage.setItem('admin_active_view', view);
-    set({ activeView: view });
+    set({ activeView: view, pendingFilter: null });
   },
   setActiveBox: (box) => {
     localStorage.setItem('admin_active_box', box);
-    set({ activeBox: box });
+    set({ activeBox: box, pendingFilter: null });
   },
-  setActiveStatus: (status) => set({ activeStatus: status }),
+  setActiveStatus: (status) => set({ activeStatus: status, pendingFilter: null }),
+  setHighlightedOrderId: (orderId) => set({ highlightedOrderId: orderId }),
+  setPendingFilter: (filter) => set({ pendingFilter: filter, activeStatus: null }),
   setIsSidebarOpen: (isOpen) => {
     localStorage.setItem('admin_sidebar_open', String(isOpen));
     set({ isSidebarOpen: isOpen });
   },
 }));
+
+export const getServiceIdFromGarage = (garage: string): ServiceType => {
+  if (garage === 'Слесарный ремонт и ТО') return 'Repair';
+  if (garage === 'Электрика и диагностика') return 'Diagnostic';
+  if (garage === 'Детейлинг и покрытия') return 'Detailing';
+  return 'General';
+};

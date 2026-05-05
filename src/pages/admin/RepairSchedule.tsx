@@ -8,7 +8,7 @@ import GarageBookingSummary from '../../components/admin/GarageBookingSummary';
 
 export default function RepairSchedule() {
   const [activeTab, setActiveTab] = useState<'grid' | 'log'>('log');
-  const { selectedDate, setSelectedDate, activeBox } = useAdminStore();
+  const { selectedDate, endDate, setSelectedDate, activeBox } = useAdminStore();
 
   return (
     <div className="space-y-8">
@@ -17,7 +17,7 @@ export default function RepairSchedule() {
           <div className="bg-graphite-light p-8 rounded-3xl border border-white/5 h-full flex flex-col justify-center">
             <h1 className="text-4xl font-bold tracking-tight text-white mb-2">Слесарный ремонт и ТО</h1>
             <p className="text-gray-400 text-lg">Управление боксами слесарного цеха</p>
-            <GarageBookingSummary date={selectedDate} garageFilter="Слесарный ремонт и ТО" />
+            <GarageBookingSummary date={selectedDate} endDate={endDate} garageFilter="Слесарный ремонт и ТО" />
           </div>
         </div>
         <div>
@@ -51,9 +51,9 @@ export default function RepairSchedule() {
       </div>
 
       {activeTab === 'grid' ? (
-        <ScheduleGrid garage="Слесарный ремонт и ТО" date={selectedDate} boxFilter={activeBox} />
+        <ScheduleGrid garage="Слесарный ремонт и ТО" date={selectedDate} endDate={endDate} boxFilter={activeBox} />
       ) : (
-        <AppointmentTable date={selectedDate} garageFilter="Слесарный ремонт и ТО" boxFilter={activeBox} />
+        <AppointmentTable date={selectedDate} endDate={endDate} garageFilter="Слесарный ремонт и ТО" boxFilter={activeBox} />
       )}
     </div>
   );

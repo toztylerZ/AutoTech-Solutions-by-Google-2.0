@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAdminStore, ServiceType } from '../../store/adminStore';
+import { AlertTriangle } from 'lucide-react';
 
 interface GarageBookingSummaryProps {
   date: string;
@@ -19,7 +20,73 @@ const BOXES = ['Бокс А', 'Бокс Б', 'Бокс В'];
 export default function GarageBookingSummary({ date, endDate, garageFilter, isSidebar }: GarageBookingSummaryProps) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { setActiveService, activeBox, setActiveBox, activeStatus, setActiveStatus } = useAdminStore();
+  const { activeService, setActiveService, activeBox, setActiveBox, activeStatus, setActiveStatus, pendingFilter, setPendingFilter } = useAdminStore();
+  const [totalAppointments, setTotalAppointments] = useState<any[]>([]);
+  const [globalTodayApps, setGlobalTodayApps] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchGlobalToday = async () => {
+      try {
+        let url = `/api/admin/appointments?date=${date}`;
+        if (endDate) url += `&endDate=${endDate}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await res.json();
+            setGlobalTodayApps(data);
+          }
+        }
+      } catch (err) {
+        console.error('Fetch global today apps error:', err);
+      }
+    };
+    fetchGlobalToday();
+    const interval = setInterval(fetchGlobalToday, 10000);
+    return () => clearInterval(interval);
+  }, [date, endDate]);
+
+  useEffect(() => {
+    const fetchTotalApps = async () => {
+      try {
+        const res = await fetch(`/api/admin/appointments?date=2000-01-01&endDate=2099-12-31`);
+        if (res.ok) {
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await res.json();
+            setTotalAppointments(data);
+          }
+        }
+      } catch (err) {
+        console.error('Fetch total apps error:', err);
+      }
+    };
+    fetchTotalApps();
+    const interval = setInterval(fetchTotalApps, 30000); // 30s for total
+    return () => clearInterval(interval);
+  }, []);
+
+  const isPending = (app: any) => {
+    const status = (app.status || "").toUpperCase();
+    if (status === 'NEW' || status === 'RAW' || status === 'COMPLETED') return true;
+    
+    if (status === 'CONFIRMED') {
+      const now = new Date();
+      // Handle date format DD.MM.YYYY or YYYY-MM-DD
+      let appDateStr = app.date;
+      if (appDateStr.includes('.')) {
+        const [d, m, y] = appDateStr.split('.');
+        appDateStr = `${y}-${m}-${d}`;
+      }
+      const appDate = new Date(appDateStr);
+      const [h, m] = (app.time || "00:00").split(':').map(Number);
+      appDate.setHours(h, m, 0, 0);
+      
+      const endTimestamp = appDate.getTime() + (Number(app.duration) || 1) * 60 * 60 * 1000;
+      return now.getTime() > endTimestamp;
+    }
+    return false;
+  };
 
   useEffect(() => {
     const fetchApps = async () => {
@@ -34,9 +101,6 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
           if (contentType && contentType.includes("application/json")) {
             const data = await res.json();
             setAppointments(data);
-          } else {
-            const text = await res.text();
-            console.error('Expected JSON but got:', text.substring(0, 500));
           }
         }
       } catch (err) {
@@ -117,7 +181,24 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
     cancelled: filteredApps.filter(a => (a.status || "").toUpperCase() === 'CANCELLED').length,
   };
 
-  const currentLabel = endDate ? 'Записей за период' : 'Записей на сегодня';
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    if (!y || !m || !d) return dateStr;
+    return `${d}.${m}.${y.slice(2)}`;
+  };
+
+  const isToday = (dateStr: string) => {
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Moscow' });
+    return dateStr === todayStr;
+  };
+
+  const currentLabel = endDate 
+    ? 'Записей за период' 
+    : isToday(date) 
+      ? 'Записей на сегодня' 
+      : `Записей на ${formatDate(date)}`;
+  const sidebarLabel = activeService !== 'General' ? "БОКСЫ" : currentLabel;
 
   if (isSidebar) {
     return (
@@ -125,43 +206,10 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-orange animate-pulse" />
-            {garageFilter ? `Загрузка боксов: ${loading ? '...' : filteredApps.length}` : `${currentLabel}: ${loading ? '...' : filteredApps.length}`}
+            {sidebarLabel}
           </div>
           
-          <div className="grid grid-cols-1 gap-3">
-            {displayItems.map(item => (
-              <button 
-                key={item.id} 
-                onClick={() => handleItemClick(item)}
-                className={`flex items-center justify-between rounded-xl px-4 py-3 border transition-all active:scale-[0.98] ${
-                  item.isActive 
-                    ? 'bg-accent-orange/10 border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
-                    : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
-                }`}
-              >
-                <div className="flex flex-col text-left">
-                  <span className={`text-[10px] font-bold uppercase tracking-widest ${item.isActive ? 'text-accent-orange' : 'text-gray-400'}`}>
-                    {item.label}
-                  </span>
-                  {garageFilter && !loading && (
-                    <span className="text-[9px] font-bold text-gray-600 uppercase">
-                      {item.duration} ч
-                    </span>
-                  )}
-                </div>
-                <span className={`text-lg font-black tracking-tight ${item.isActive ? 'text-accent-orange' : item.color}`}>
-                  {loading ? '...' : item.count}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="h-px bg-white/5" />
-
-        <div className="space-y-3">
-          <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Статусы:</div>
-          <div className="space-y-2">
+            <div className="space-y-1">
             {[
               { label: 'Все', value: statusCounts.all, color: 'text-white' },
               { label: 'Новые', value: statusCounts.new, color: 'text-yellow-400' },
@@ -173,18 +221,61 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
               <button 
                 key={s.label} 
                 onClick={() => handleStatusClick(s.label === 'Все' ? 'Все' : s.label)}
-                className={`w-full flex justify-between items-center rounded-lg px-3 py-2 border transition-all active:scale-[0.98] ${
-                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все')))
+                className={`w-full flex justify-between items-center rounded-lg px-3 py-[3px] border transition-all active:scale-[0.98] ${
+                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter
                     ? 'bg-white/10 border-white/20 shadow-lg' 
                     : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
                 }`}
               >
                 <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) ? 'text-white' : 'text-gray-500'
+                  ((activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter) ? 'text-white' : 'text-gray-500'
                 }`}>{s.label}</span>
                 <span className={`text-xs font-black ${
-                  (activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) ? 'text-white' : s.color
+                  ((activeStatus === s.label || (s.label === 'Все' && (!activeStatus || activeStatus === 'Все'))) && !pendingFilter) ? 'text-white' : s.color
                 }`}>{loading ? '...' : s.value}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="h-px bg-white/5" />
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
+            <AlertTriangle className="w-4 h-4 text-yellow-500 animate-[pulse_2s_infinite] drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+            В ожидании обработки:
+          </div>
+          <div className="space-y-1">
+            {[
+              { 
+                id: 'today' as const, 
+                label: `НА ${endDate ? `${formatDate(date)} - ${formatDate(endDate)}` : formatDate(date)}`, 
+                count: globalTodayApps.filter(isPending).length 
+              },
+              { id: 'all' as const, label: 'Всего', count: totalAppointments.filter(isPending).length }
+            ].map(p => (
+              <button 
+                key={p.id} 
+                onClick={() => {
+                  if (pendingFilter === p.id) {
+                    setPendingFilter(null);
+                  } else {
+                    setPendingFilter(p.id);
+                    setActiveService('General');
+                  }
+                }}
+                className={`w-full flex justify-between items-center rounded-lg px-3 py-[3px] border transition-all active:scale-[0.98] ${
+                  pendingFilter === p.id 
+                    ? 'bg-accent-orange/10 border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                    : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
+                }`}
+              >
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                  pendingFilter === p.id ? 'text-accent-orange' : 'text-gray-500'
+                }`}>{p.label}</span>
+                <span className={`text-xs font-black ${
+                  pendingFilter === p.id ? 'text-accent-orange' : 'text-white'
+                }`}>{loading ? '...' : p.count}</span>
               </button>
             ))}
           </div>
@@ -198,7 +289,7 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">
           <span className="w-1.5 h-1.5 rounded-full bg-accent-orange animate-pulse" />
-          {garageFilter ? `Загрузка боксов (${date}): ${loading ? '...' : filteredApps.length}` : `Записей на ${date}: ${loading ? '...' : filteredApps.length}`}
+          {garageFilter ? `Загрузка боксов (${formatDate(date)}): ${loading ? '...' : filteredApps.length}` : `Записей на ${formatDate(date)}: ${loading ? '...' : filteredApps.length}`}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pr-4">
           {displayItems.map(item => (
@@ -211,7 +302,7 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
                   {loading ? '...' : item.count}
                 </span>
                 {!loading && garageFilter && (
-                  <span className="text-[9px] font-bold text-gray-500 uppercase mt-1">
+                  <span className="text-[9px] font-bold text-gray-500 mt-1 lowercase">
                     {item.duration} ч
                   </span>
                 )}

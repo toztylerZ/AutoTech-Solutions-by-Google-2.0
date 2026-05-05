@@ -9,11 +9,12 @@ export default function AdminDashboard() {
     endDate,
     activeService,
     activeView,
-    activeBox
+    activeBox,
+    pendingFilter
   } = useAdminStore();
 
   const services = [
-    { id: 'General', label: 'Общее расписание', icon: 'LayoutDashboard' },
+    { id: 'General', label: 'Все записи', icon: 'LayoutDashboard' },
     { id: 'Repair', label: 'Слесарный ремонт и ТО', fullLabel: 'Слесарный ремонт и ТО', icon: 'Hammer' },
     { id: 'Diagnostic', label: 'Электрика и диагностика', fullLabel: 'Электрика и диагностика', icon: 'Zap' },
     { id: 'Detailing', label: 'Детейлинг и покрытия', fullLabel: 'Детейлинг и покрытия', icon: 'Sparkles' },
@@ -25,11 +26,11 @@ export default function AdminDashboard() {
     <div className="flex flex-col gap-6 pt-4">
       <div className="transition-all duration-300">
         {activeService === 'General' ? (
-          <AppointmentTable date={selectedDate} endDate={endDate} boxFilter={activeBox} />
+          <AppointmentTable date={selectedDate} endDate={endDate} boxFilter={activeBox} pendingMode={pendingFilter} />
         ) : activeView === 'grid' ? (
           <ScheduleGrid garage={currentService?.fullLabel as string} date={selectedDate} endDate={endDate} boxFilter={activeBox} />
         ) : (
-          <AppointmentTable date={selectedDate} endDate={endDate} garageFilter={currentService?.fullLabel} boxFilter={activeBox} />
+          <AppointmentTable date={selectedDate} endDate={endDate} garageFilter={currentService?.fullLabel} boxFilter={activeBox} pendingMode={pendingFilter} />
         )}
       </div>
     </div>

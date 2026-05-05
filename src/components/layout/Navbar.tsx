@@ -20,7 +20,7 @@ import {
   LayoutGrid,
   List
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useAdminStore, type ServiceType, type ViewType } from '../../store/adminStore';
 import CompactCalendar from '../admin/CompactCalendar';
@@ -34,7 +34,7 @@ const navLinks = [
 ];
 
 const services = [
-  { id: 'General', label: 'Общее', fullLabel: 'Общее расписание', icon: LayoutDashboard },
+  { id: 'General', label: 'Все', fullLabel: 'Все записи', icon: LayoutDashboard },
   { id: 'Repair', label: 'Слесарный', fullLabel: 'Слесарный ремонт и ТО', icon: Hammer },
   { id: 'Diagnostic', label: 'Электрика', fullLabel: 'Электрика и диагностика', icon: Zap },
   { id: 'Detailing', label: 'Детейлинг', fullLabel: 'Детейлинг и покрытия', icon: Sparkles },
@@ -44,7 +44,7 @@ const adminDropdownLinks = [
   { 
     group: 'РАСПИСАНИЕ', 
     items: [
-      { name: 'Общее расписание', href: '/admin', icon: Calendar },
+      { name: 'Все записи', href: '/admin', icon: Calendar },
     ]
   },
   { 
@@ -99,6 +99,86 @@ export default function Navbar() {
     setIsSidebarOpen
   } = useAdminStore();
 
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('ru-RU', { hour12: false, timeZone: 'Europe/Moscow' }));
+  const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('ru-RU', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: '2-digit',
+    timeZone: 'Europe/Moscow'
+  }));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString('ru-RU', { hour12: false, timeZone: 'Europe/Moscow' }));
+      setCurrentDate(now.toLocaleDateString('ru-RU', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: '2-digit',
+        timeZone: 'Europe/Moscow'
+      }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const fetchApps = async () => {
+      try {
+        let url = `/api/admin/appointments?date=${selectedDate}`;
+        if (endDate) url += `&endDate=${endDate}`;
+        
+        const res = await fetch(url);
+        if (res.ok) {
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await res.json();
+            setAppointments(data);
+          }
+        }
+      } catch (err) {
+        console.error('Navbar fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchApps();
+    const interval = setInterval(fetchApps, 30000); // Polling every 30s for navbar counts is fine
+    return () => clearInterval(interval);
+  }, [selectedDate, endDate, isAdmin]);
+
+  const getServiceCount = (id: string, fullLabel: string) => {
+    if (id === 'General') return appointments.length;
+    return appointments.filter(a => a.garage === fullLabel).length;
+  };
+
+  const getBoxCount = (boxName: string) => {
+    const currentServiceLabel = services.find(s => s.id === activeService)?.fullLabel;
+    let filtered = appointments;
+    if (activeService !== 'General') {
+      filtered = filtered.filter(a => a.garage === currentServiceLabel);
+    }
+    if (boxName === 'Все') return filtered.length;
+    return filtered.filter(a => a.box === boxName).length;
+  };
+
+  const getBoxDuration = (boxName: string) => {
+    const currentServiceLabel = services.find(s => s.id === activeService)?.fullLabel;
+    let filtered = appointments;
+    if (activeService !== 'General') {
+      filtered = filtered.filter(a => a.garage === currentServiceLabel);
+    }
+    const relevantAppointments = boxName === 'Все' 
+      ? filtered 
+      : filtered.filter(a => a.box === boxName);
+    
+    return relevantAppointments.reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
+  };
+
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-graphite/80 backdrop-blur-xl border-b border-white/5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -113,7 +193,7 @@ export default function Navbar() {
               </span>
             </Link>
             {isAdmin && (
-              <div className="mt-1 ml-10">
+              <div className="mt-1 ml-10 flex flex-col items-start">
                 <CompactCalendar 
                   selectedDate={selectedDate} 
                   endDate={endDate}
@@ -122,6 +202,40 @@ export default function Navbar() {
                     setEndDate(end);
                   }}
                 />
+                <div className="flex flex-col items-center ml-2 w-full max-w-[120px]">
+                  <div 
+                    className="mt-1.5 font-black tracking-[0.2em]"
+                    style={{ 
+                      color: '#a09292', 
+                      fontStyle: 'italic', 
+                      fontSize: '11px', 
+                      lineHeight: '14px', 
+                      fontFamily: 'Courier New' 
+                    }}
+                  >
+                    {currentTime}
+                  </div>
+                  <div 
+                    onClick={() => {
+                      const today = new Date().toISOString().split('T')[0];
+                      setSelectedDate(today);
+                      setEndDate(null);
+                    }}
+                    className="cursor-pointer hover:brightness-125 transition-all w-full"
+                    style={{ 
+                      fontStyle: 'normal',
+                      fontWeight: 'normal',
+                      textDecorationLine: 'underline',
+                      fontSize: '10px',
+                      textAlign: 'center',
+                      color: '#ad9353',
+                      lineHeight: '14px',
+                      fontFamily: 'Courier New'
+                    }}
+                  >
+                    {currentDate}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -139,14 +253,21 @@ export default function Navbar() {
                       setActiveBox('Все');
                       setActiveView('log');
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
                       activeService === service.id 
-                        ? 'bg-white text-accent-orange shadow-lg hover:bg-accent-orange hover:text-white' 
-                        : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
+                        ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                        : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
                     }`}
                   >
                     <service.icon className="w-3 h-3" />
                     {service.fullLabel}
+                    {!loading && (
+                      <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[12px] font-black border-none transition-colors ${
+                        activeService === service.id ? 'text-white bg-accent-orange' : 'text-accent-orange bg-[#393434]'
+                      }`}>
+                        {getServiceCount(service.id, service.fullLabel)}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -162,10 +283,10 @@ export default function Navbar() {
                     <div className="flex gap-1 bg-black/20 p-1 rounded-xl border border-white/5 h-fit">
                       <button
                         onClick={() => setActiveView('log')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
                           activeView === 'log' 
-                            ? 'bg-white text-blue-600 shadow-md hover:bg-blue-600 hover:text-white' 
-                            : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
+                            ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                            : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
                         }`}
                       >
                         <List className="w-3 h-3" />
@@ -173,10 +294,10 @@ export default function Navbar() {
                       </button>
                       <button
                         onClick={() => setActiveView('grid')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
                           activeView === 'grid' 
-                            ? 'bg-white text-blue-600 shadow-md hover:bg-blue-600 hover:text-white' 
-                            : 'text-white bg-white/5 hover:text-gray-500 hover:bg-transparent'
+                            ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                            : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
                         }`}
                       >
                         <LayoutGrid className="w-3 h-3" />
@@ -184,23 +305,37 @@ export default function Navbar() {
                       </button>
                     </div>
 
-                    {activeView === 'log' && (
-                      <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
-                        {['Все', 'Бокс А', 'Бокс Б', 'Бокс В'].map((box) => (
-                          <button
-                            key={box}
-                            onClick={() => setActiveBox(box)}
-                            className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all ${
-                              activeBox === box 
-                                ? 'bg-white text-gray-900 border border-white shadow-md' 
-                                : 'text-white bg-white/5 hover:text-gray-600 hover:bg-transparent'
-                            }`}
-                          >
-                            {box}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
+                      {['Все', 'Бокс А', 'Бокс Б', 'Бокс В'].map((box) => (
+                        <button
+                          key={box}
+                          onClick={() => setActiveBox(box)}
+                          className={`px-3 py-1.5 h-[33px] rounded-lg text-[8px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 border ${
+                            activeBox === box 
+                              ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                              : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
+                          }`}
+                        >
+                          {box}
+                          {!loading && (
+                            <div className="flex items-center gap-1">
+                              {box !== 'Все' ? (
+                                <>
+                                  <span className={`px-1.5 rounded text-[12px] font-black border border-white/5 transition-colors ${
+                                    activeBox === box ? 'bg-accent-orange text-white border-transparent' : 'bg-[#393434] text-accent-orange'
+                                  }`}>
+                                    {getBoxCount(box)}
+                                  </span>
+                                  <span className={`text-[10px] font-bold italic lowercase opacity-60 ${activeBox === box ? 'text-white' : 'text-gray-400'}`}>
+                                    &nbsp; {getBoxDuration(box)} ч
+                                  </span>
+                                </>
+                              ) : null}
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </motion.div>
                 ) : (
                   /* Placeholder when General is active to maintain height and position */
