@@ -201,10 +201,20 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
   const sidebarLabel = currentLabel;
 
   if (isSidebar) {
+    const serviceName = activeService === 'General' 
+      ? 'ВСЕ ЗАПИСИ' 
+      : GARAGES.find(g => g.id === activeService)?.name || activeService;
+
     return (
       <div className="flex flex-col gap-6 p-4">
         {!pendingFilter && (
           <div className="space-y-4">
+            <div className="mb-2 text-[12px]">
+              <div className="text-[12px] font-black uppercase tracking-[0.2em] text-white">
+                {serviceName}
+              </div>
+              <div className="h-0.5 w-8 bg-accent-orange mt-1" />
+            </div>
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
               <span className="w-1.5 h-1.5 rounded-full bg-accent-orange animate-pulse" />
               {sidebarLabel}
