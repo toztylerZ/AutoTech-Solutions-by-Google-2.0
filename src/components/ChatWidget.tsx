@@ -282,7 +282,12 @@ ${adminSystemPrompt || defaultSystemPrompt}
 ПРАЙС: ${priceContext}
 FAQ: ${faqContext}
 ${resumeContext}
-Текущая дата и время: ${new Date().toLocaleString('ru-RU')}
+Текущая дата и время: ${(() => {
+  const now = new Date();
+  const utc3 = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(utc3.getUTCDate())}.${pad(utc3.getUTCMonth() + 1)}.${utc3.getUTCFullYear()} ${pad(utc3.getUTCHours())}:${pad(utc3.getUTCMinutes())}:${pad(utc3.getUTCSeconds())}`;
+})()}
 `;
 
       const history = historyMessages.map(msg => ({

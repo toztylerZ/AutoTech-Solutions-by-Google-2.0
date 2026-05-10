@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, Box, Info, Car, AlertTriangle } from 'lucide-react';
+import { Clock, Box, Info, Car, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAdminStore } from '../../store/adminStore';
-import EditAppointmentModal from './EditAppointmentModal';
 
 interface ScheduleGridProps {
   garage: string;
@@ -17,9 +16,50 @@ const BOXES = ['Бокс А', 'Бокс Б', 'Бокс В'];
 export default function ScheduleGrid({ garage, date, endDate, boxFilter }: ScheduleGridProps) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingAppointment, setEditingAppointment] = useState<any | null>(null);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const { activeStatus, highlightedOrderId, setHighlightedOrderId } = useAdminStore();
+  const { 
+    activeStatus, 
+    highlightedOrderId, 
+    setHighlightedOrderId, 
+    selectedAppointment, 
+    setSelectedAppointment, 
+    refreshKey, 
+    triggerRefresh, 
+    setSelectedDate, 
+    setEndDate,
+    isDetailsExpanded,
+    setIsDetailsExpanded,
+    isPickingNewTime,
+    setIsPickingNewTime,
+    isNewAppointmentExpanded,
+    setIsNewAppointmentExpanded,
+    setNewAppointmentDraft
+  } = useAdminStore();
+
+  const cardRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    const targetId = highlightedOrderId || selectedAppointment?.orderId;
+    if (targetId && cardRefs.current[targetId]) {
+      cardRefs.current[targetId]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest'
+      });
+    }
+  }, [highlightedOrderId, selectedAppointment, appointments]);
+
+  const navigateDate = (direction: 'prev' | 'next', currentDateStr: string) => {
+    const d = new Date(currentDateStr);
+    if (direction === 'prev') {
+      d.setDate(d.getDate() - 1);
+    } else {
+      d.setDate(d.getDate() + 1);
+    }
+    const newDate = d.toISOString().split('T')[0];
+    setSelectedDate(newDate);
+    setEndDate(null);
+  };
 
   useEffect(() => {
     if (highlightedOrderId) {
@@ -34,8 +74,8 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
     { label: 'НОВАЯ', code: 'NEW' },
     { label: 'ОТМЕНЁННАЯ', code: 'CANCELLED' },
     { label: 'ПОДТВЕРЖДЕННАЯ', code: 'CONFIRMED' },
-    { label: 'ЗАВЕРШЕННАЯ', code: 'COMPLETED' },
-    { label: 'ЗАКРЫТАЯ', code: 'CLOSED' }
+    { label: 'ВЫПОЛНЕННАЯ', code: 'COMPLETED' },
+    { label: 'ОПЛАЧЕНО', code: 'PAID' }
   ];
 
   useEffect(() => {
@@ -61,7 +101,7 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
     fetchApps();
     const interval = setInterval(fetchApps, 5000); // Poll every 5 seconds for real-time sync
     return () => clearInterval(interval);
-  }, [garage, date, endDate]);
+  }, [garage, date, endDate, refreshKey]);
 
   const isPending = (app: any) => {
     const status = (app.status || "").toUpperCase();
@@ -93,6 +133,7 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
       case 'RAW':
       case 'NEW': return 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20';
       case 'COMPLETED': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+      case 'PAID':
       case 'CLOSED': return 'text-gray-400 bg-black border-white/10 shadow-inner';
       default: return 'text-gray-500 bg-white/5 border-white/10';
     }
@@ -184,6 +225,13 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
     return dayApps.filter(a => {
       const appTime = getTimeValue(a.time);
       return a.box === box && Math.floor(appTime) === slotTime;
+    }).sort((a, b) => {
+      // Prioritize non-cancelled appointments
+      const sA = (a.status || "").toUpperCase();
+      const sB = (b.status || "").toUpperCase();
+      if (sA === 'CANCELLED' && sB !== 'CANCELLED') return 1;
+      if (sA !== 'CANCELLED' && sB === 'CANCELLED') return -1;
+      return 0;
     });
   };
 
@@ -225,19 +273,33 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
       <div className="overflow-auto max-h-[calc(100vh-120px)] relative space-y-12 pb-12">
         {datesList.map(currentDate => (
           <div key={currentDate} className="relative group/date">
-            {datesList.length > 1 && (
-              <div className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/10 p-4 flex items-center justify-center">
-                <div className="flex items-center justify-center gap-4 w-full max-w-2xl">
-                  <div className="h-[1px] bg-gradient-to-r from-transparent to-accent-orange/40 flex-1" />
-                  <span className="text-[12px] font-black uppercase tracking-[0.3em] text-accent-orange px-6 py-2 border border-accent-orange/30 rounded-full bg-accent-orange/10 shadow-[0_0_20px_rgba(255,165,0,0.1)]">
-                    {formatDateHeader(currentDate)}
-                  </span>
-                  <div className="h-[1px] bg-gradient-to-l from-transparent to-accent-orange/40 flex-1" />
-                </div>
+            <div className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/10 h-[50px] flex items-center justify-center">
+              <div className="flex items-center justify-center gap-4 w-full max-w-2xl px-4">
+                <div className="h-[1px] bg-gradient-to-r from-transparent to-accent-orange/40 flex-1" />
+                {!endDate && (
+                  <button 
+                    onClick={() => navigateDate('prev', currentDate)}
+                    className="p-1 hover:bg-white/10 rounded-full transition-colors text-accent-orange/50 hover:text-accent-orange"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                )}
+                <span className="text-[12px] h-[30px] flex items-center justify-center font-black uppercase tracking-[0.3em] text-accent-orange px-6 border border-accent-orange/30 rounded-full bg-accent-orange/10 shadow-[0_0_20px_rgba(255,165,0,0.1)]">
+                  {formatDateHeader(currentDate)}
+                </span>
+                {!endDate && (
+                  <button 
+                    onClick={() => navigateDate('next', currentDate)}
+                    className="p-1 hover:bg-white/10 rounded-full transition-colors text-accent-orange/50 hover:text-accent-orange"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
+                <div className="h-[1px] bg-gradient-to-l from-transparent to-accent-orange/40 flex-1" />
               </div>
-            )}
+            </div>
             <table className="w-full border-collapse">
-              <thead className={`sticky ${datesList.length > 1 ? 'top-[65px]' : 'top-0'} z-40 bg-graphite-light shadow-xl`}>
+              <thead className="sticky top-[50px] z-40 bg-graphite-light shadow-xl">
                 <tr className="bg-black/40 border-b border-white/10 backdrop-blur-sm">
                   <th className="p-4 border-r border-white/10 w-24"></th>
                   {displayedBoxes.map(box => (
@@ -279,20 +341,67 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
                               {apps.map((app, appIdx) => (
                                 <motion.div
                                   key={`${app.orderId}-${appIdx}`}
+                                  ref={el => { cardRefs.current[app.orderId] = el; }}
                                   initial={{ opacity: 0, scale: 0.95 }}
                                   animate={{ 
                                     opacity: 1, 
                                     scale: 1,
-                                    boxShadow: app.orderId === highlightedOrderId ? '0 0 30px rgba(255, 165, 0, 0.4)' : 'none',
-                                    outline: app.orderId === highlightedOrderId ? '2px solid rgba(255, 165, 0, 0.5)' : 'none'
+                                    boxShadow: (app.orderId === highlightedOrderId || selectedAppointment?.orderId === app.orderId) ? '0 0 30px rgba(255, 165, 0, 0.4)' : 'none',
+                                    outline: (app.orderId === highlightedOrderId || selectedAppointment?.orderId === app.orderId) ? '2px solid rgba(255, 165, 0, 0.5)' : 'none'
                                   }}
                                   onDoubleClick={(e) => {
                                     e.stopPropagation();
-                                    setEditingAppointment(app);
+                                    if (isPickingNewTime) return;
+                                    if (isNewAppointmentExpanded) {
+                                      if ((app.status || "").toUpperCase() === 'CANCELLED') {
+                                        setNewAppointmentDraft({
+                                          date: app.date,
+                                          time: app.time,
+                                          garage: app.garage,
+                                          box: app.box
+                                        });
+                                        return;
+                                      } else {
+                                        setIsNewAppointmentExpanded(false);
+                                      }
+                                    }
+                                    if (selectedAppointment?.orderId === app.orderId) {
+                                      if (isDetailsExpanded) {
+                                        setSelectedAppointment(null);
+                                      } else {
+                                        setIsDetailsExpanded(true);
+                                      }
+                                    } else {
+                                      setSelectedAppointment(app);
+                                      setIsDetailsExpanded(true);
+                                    }
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setHighlightedOrderId(app.orderId);
+                                    if (isPickingNewTime) return;
+                                    if (isNewAppointmentExpanded) {
+                                      if ((app.status || "").toUpperCase() === 'CANCELLED') {
+                                        setNewAppointmentDraft({
+                                          date: app.date,
+                                          time: app.time,
+                                          garage: app.garage,
+                                          box: app.box
+                                        });
+                                        return;
+                                      } else {
+                                        setIsNewAppointmentExpanded(false);
+                                      }
+                                    }
+                                    if (selectedAppointment?.orderId === app.orderId) {
+                                      if (isDetailsExpanded) {
+                                        setSelectedAppointment(null);
+                                      } else {
+                                        setIsDetailsExpanded(true);
+                                      }
+                                    } else {
+                                      setSelectedAppointment(app);
+                                      setIsDetailsExpanded(true);
+                                    }
                                   }}
                                   className={`flex-grow border rounded-xl p-3 flex flex-col justify-between group/card transition-all shadow-lg ${getStatusColor(app.status)} hover:shadow-2xl cursor-pointer select-none relative ${activeMenu === app.orderId ? 'z-50' : 'z-10'}`}
                                 >
@@ -316,12 +425,12 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
                                                   (app.status || "").toUpperCase() === 'CONFIRMED' ? 'bg-green-500' : 
                                                   (app.status || "").toUpperCase() === 'CANCELLED' ? 'bg-red-500' :
                                                   (app.status || "").toUpperCase() === 'COMPLETED' ? 'bg-blue-400' :
-                                                  (app.status || "").toUpperCase() === 'CLOSED' ? 'bg-black border border-white/20' :
+                                                  (app.status || "").toUpperCase() === 'PAID' || (app.status || "").toUpperCase() === 'CLOSED' ? 'bg-black border border-white/20' :
                                                   'bg-yellow-500'
                                                  }`} />
                                                 <span className="text-[7px] font-black uppercase tracking-widest opacity-70">
-                                                  {(app.status || "").toUpperCase() === 'CLOSED' ? 'ЗАКРЫТАЯ' : 
-                                                   (app.status || "").toUpperCase() === 'COMPLETED' ? 'ЗАВЕРШЕННАЯ' :
+                                                  {(app.status || "").toUpperCase() === 'PAID' || (app.status || "").toUpperCase() === 'CLOSED' ? 'ОПЛАЧЕНО' : 
+                                                   (app.status || "").toUpperCase() === 'COMPLETED' ? 'ВЫПОЛНЕННАЯ' :
                                                    (app.status || "").toUpperCase() === 'CONFIRMED' ? 'ПОДТВЕРЖДЕННАЯ' :
                                                    (app.status || "").toUpperCase() === 'CANCELLED' ? 'ОТМЕНЕННАЯ' :
                                                    'НОВАЯ'}
@@ -353,11 +462,11 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
                                               </div>
                                            </div>
                                            <div className="flex items-center justify-start gap-1 mt-0.5">
-                                            <div className="text-[9px] text-gray-500 font-mono font-black tracking-tight">#{app.orderId}</div>
-                                            <span className="text-gray-700">|</span>
-                                            <div className="text-[9px] text-gray-500 font-mono tracking-tighter truncate">{formatPhone(app.phone)}</div>
-                                          </div>
-                                       </div>
+                                             <div className="text-[9px] text-gray-500 font-mono font-black tracking-tight">#{app.orderId}</div>
+                                             <span className="text-gray-700">|</span>
+                                             <div className="text-[9px] text-gray-500 font-mono tracking-tighter truncate">{formatPhone(app.phone)}</div>
+                                           </div>
+                                        </div>
                                       <div className="text-[11px] font-black opacity-90 leading-tight flex items-center justify-start gap-1.5 mt-1">
                                         <Car className="w-3 h-3 shrink-0" />
                                         <span className="truncate">{app.car || 'Без авто'}</span>
@@ -371,8 +480,29 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
                               ))}
                             </div>
                           ) : (
-                            <div className="w-full h-full border border-dashed border-white/5 rounded-xl flex items-center justify-center group/empty transition-all hover:bg-white/[0.02] hover:border-white/20">
-                               <span className="text-[10px] text-gray-800 font-black uppercase tracking-widest opacity-0 group-hover/empty:opacity-100 transition-opacity">Свободно</span>
+                            <div 
+                              onClick={() => {
+                                if (isPickingNewTime && selectedAppointment) {
+                                  setSelectedAppointment({
+                                    ...selectedAppointment,
+                                    date: currentDate,
+                                    time: hour,
+                                    garage: garage,
+                                    box: box
+                                  });
+                                  return;
+                                }
+                                setIsNewAppointmentExpanded(true);
+                                setNewAppointmentDraft({
+                                  date: currentDate,
+                                  time: hour,
+                                  garage: garage,
+                                  box: box
+                                });
+                              }}
+                              className="w-full h-full border border-dashed border-white/5 rounded-xl flex items-center justify-center group/empty transition-all hover:bg-white/[0.02] hover:border-accent-orange/30 cursor-crosshair select-none"
+                            >
+                               <span className="text-[10px] text-accent-orange font-black uppercase tracking-widest opacity-0 group-hover/empty:opacity-100 transition-opacity">Свободно</span>
                             </div>
                           )}
                         </td>
@@ -385,19 +515,6 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
           </div>
         ))}
       </div>
-
-
-      <AnimatePresence>
-        {editingAppointment && (
-          <EditAppointmentModal
-            appointment={editingAppointment}
-            onClose={() => setEditingAppointment(null)}
-            onSave={(updated) => {
-              setAppointments(prev => prev.map(a => a.orderId === updated.orderId ? { ...a, ...updated } : a));
-            }}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

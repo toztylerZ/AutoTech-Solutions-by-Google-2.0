@@ -1,113 +1,257 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Shield, Key, Trash2, ShieldCheck, Mail, X, Lock } from 'lucide-react';
+import { UserPlus, Shield, Trash2, Edit2, ShieldCheck, X, AlertCircle } from 'lucide-react';
+import { useAdminStore } from '../../store/adminStore';
 
-const mockUsers = [
-  { id: 1, name: 'Администратор', email: 'admin@autotech.pro', role: 'admin', box: 'Все' },
-  { id: 2, name: 'Никита (Мастер ТО)', email: 'nikita@autotech.pro', role: 'staff', box: 'Бокс 1 (Ремонт)' },
-  { id: 3, name: 'Сергей (Диагност)', email: 'sergey@autotech.pro', role: 'staff', box: 'Бокс 2 (Диагностика)' },
-];
+const formatPhoneNumber = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 11) {
+    return `+${digits[0]} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
+  }
+  return phone;
+};
 
 export default function AdminAccounts() {
-  const [users, setUsers] = useState(mockUsers);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isPassModalOpen, setIsPassModalOpen] = useState(false);
+  const { 
+    activeService, 
+    setActiveService,
+    activeBox, 
+    activeStatus, 
+    setSelectedAppointment, 
+    setIsDetailsExpanded,
+    setIsNewAppointmentExpanded 
+  } = useAdminStore();
+
+  const refreshKey = useAdminStore((state) => state.refreshKey);
+  const [staff, setStaff] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Reset service filter when entering accounts management to avoid conflicts
+    if (activeService !== 'General') {
+      setActiveService('General');
+    }
+  }, []);
+
+  const fetchStaff = async () => {
+    try {
+      const res = await fetch('/api/admin/staff');
+      if (res.ok) {
+        const data = await res.json();
+        setStaff(data);
+      }
+    } catch (err) {
+      console.error('Fetch staff error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStaff();
+  }, [refreshKey]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchStaff, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    try {
+      const res = await fetch(`/api/admin/staff/${deleteConfirm}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchStaff();
+        setDeleteConfirm(null);
+      }
+    } catch (err) {
+      console.error('Delete staff error:', err);
+    }
+  };
+
+  const getGarageLabel = (id: string) => {
+    if (id === 'Repair') return 'Слесарный ремонт и ТО';
+    if (id === 'Diagnostic') return 'Электрика и диагностика';
+    if (id === 'Detailing') return 'Детейлинг и покрытия';
+    return id;
+  };
+
+  const filteredStaff = staff.filter(member => {
+    // 1. Top panel service filter (Repair/Diagnostic/Detailing)
+    if (activeService !== 'General') {
+      const accessLabel = getGarageLabel(activeService);
+      if (member.access !== accessLabel) return false;
+    }
+
+    // 2. Top panel box filter (Box A/B/C)
+    if (activeBox !== 'Все') {
+      if (member.box !== activeBox) return false;
+    }
+
+    // 3. Left sidebar status filter (Access categories, Managers, Administrators)
+    if (activeStatus && activeStatus !== 'Все') {
+      const statusLower = activeStatus.toLowerCase();
+      if (statusLower === 'менеджеры') {
+        if (member.role?.toLowerCase() !== 'менеджер') return false;
+      } else if (statusLower === 'администраторы') {
+        if (member.role?.toLowerCase() !== 'администратор') return false;
+      } else {
+        // If it's one of the access labels
+        const accessLabel = getGarageLabel(activeStatus).toLowerCase().trim();
+        const memberAccess = (member.access || '').toLowerCase().trim();
+        if (memberAccess !== accessLabel) return false;
+      }
+    }
+
+    return true;
+  });
+
+  const getRoleColor = (role: string) => {
+    if (role === 'администратор') return 'text-red-400';
+    if (role === 'менеджер') return 'text-yellow-400';
+    return 'text-white';
+  };
+
+  const getAccessColor = (access: string) => {
+    const acc = (access || '').toLowerCase().trim();
+    if (acc === 'слесарный ремонт и то') return 'text-blue-400';
+    if (acc === 'электрика и диагностика') return 'text-purple-400';
+    if (acc === 'детейлинг и покрытия') return 'text-emerald-400';
+    return 'text-gray-400';
+  };
 
   return (
-    <div className="space-y-8 pb-20">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Аккаунты и Доступ</h1>
-          <p className="text-gray-400 text-sm">Управление учетными записями персонала и правами доступа</p>
-        </div>
-        <div className="flex gap-4">
-          <button 
-            onClick={() => setIsPassModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-white font-bold transition-all"
-          >
-            <Lock className="w-4 h-4" />
-            СМЕНИТЬ ПАРОЛЬ АДМИНА
-          </button>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-accent-orange hover:bg-orange-600 rounded-2xl text-white font-bold transition-all shadow-lg neon-glow-orange"
-          >
-            <UserPlus className="w-4 h-4" />
-            ДОБАВИТЬ СОТРУДНИКА
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-black/40 border-b border-white/10">
-              <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-10">Сотрудник</th>
-              <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Роль / Доступ</th>
-              <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Безопасность</th>
-              <th className="p-6 text-[10px] font-bold text-gray-500 uppercase tracking-widest pr-10 text-left">Действия</th>
+    <div className="flex flex-col h-full bg-graphite overflow-hidden">
+      <div 
+        ref={scrollRef}
+        className="flex-grow overflow-auto mx-4 mb-4 mt-4 bg-[#121212] rounded-3xl border border-white/5 scrollbar-hide relative"
+      >
+        <table className="w-full text-left border-separate border-spacing-0">
+          <thead className="sticky top-0 z-30">
+            <tr className="bg-[#1a1a1a] shadow-[0_1px_0_rgba(255,255,255,0.1)]">
+              <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] pl-10 h-14 bg-[#1a1a1a] border-b border-white/5">Ф.И.О. сотрудника</th>
+              <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] bg-[#1a1a1a] border-b border-white/5">Логин</th>
+              <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] bg-[#1a1a1a] border-b border-white/5">Роль / Доступ</th>
+              <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] bg-[#1a1a1a] border-b border-white/5 text-center">Бокс</th>
+              <th className="p-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] pr-10 bg-[#1a1a1a] border-b border-white/5 text-right">Действие</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
-            {users.map((user) => (
-              <tr key={user.id} className="hover:bg-white/5 transition-colors group">
-                <td className="p-6 pl-10">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center text-accent-orange font-bold uppercase border border-white/5">
-                      {user.name.charAt(0)}
+          <tbody className="divide-y divide-white/5 bg-transparent">
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="p-10 text-center text-gray-500 font-mono italic">Загрузка...</td>
+              </tr>
+            ) : filteredStaff.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="p-10 text-center text-gray-500 font-mono italic">Аккаунты не найдены</td>
+              </tr>
+            ) : (
+              filteredStaff.map((member) => (
+                <tr key={member.id} className="hover:bg-white/[0.02] transition-colors group">
+                  <td className="p-4 pl-10">
+                    <div className="flex flex-col">
+                      <div className="text-sm font-bold text-white uppercase tracking-wider">{member.user_name}</div>
+                      <div className="text-[11px] font-mono text-gray-500 mt-1">{formatPhoneNumber(member.phone)}</div>
                     </div>
-                    <div>
-                      <div className="text-sm font-bold text-white">{user.name}</div>
-                      <div className="text-xs text-gray-500 flex items-center gap-1">
-                        <Mail className="w-3 h-3" />
-                        {user.email}
+                  </td>
+                  <td className="p-4">
+                    <div className="text-sm font-mono text-gray-400">{member.login || '—'}</div>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex flex-col">
+                       <div className="flex items-center gap-2">
+                          <span className={`text-[11px] font-black uppercase tracking-wider ${getRoleColor(member.role)}`}>
+                            {member.role}
+                          </span>
+                       </div>
+                       <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${getAccessColor(member.access)}`}>
+                         {member.access || 'Полный доступ'}
+                       </div>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex justify-center">
+                      <div className="text-[10px] font-bold text-gray-300 uppercase tracking-widest bg-white/5 px-4 py-1.5 rounded-full border border-white/5 min-w-[80px] text-center">
+                        {member.box || '—'}
                       </div>
                     </div>
-                  </div>
-                </td>
-                <td className="p-6">
-                  <div className="flex flex-col gap-1.5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border w-fit ${
-                      user.role === 'admin' 
-                        ? 'bg-accent-orange/10 text-accent-orange border-accent-orange/20' 
-                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                    }`}>
-                      {user.role === 'admin' ? <Shield className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
-                      {user.role === 'admin' ? 'Админ' : 'Персонал'}
-                    </span>
-                    <span className="text-[10px] text-gray-500 font-medium ml-1">Доступ: {user.box}</span>
-                  </div>
-                </td>
-                <td className="p-6">
-                   <button className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-widest group">
-                     <Key className="w-4 h-4 text-gray-600 group-hover:text-accent-orange transition-colors" />
-                     Сбросить пароль
-                   </button>
-                </td>
-                <td className="p-6 pr-10 text-left">
-                  <button className="p-2 text-gray-600 hover:text-red-500 transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="p-4 pr-10">
+                    <div className="flex items-center justify-end gap-3">
+                      <button 
+                        onClick={() => {
+                          setSelectedAppointment({
+                            id: member.id,
+                            orderId: member.id,
+                            clientName: member.user_name,
+                            phone: member.phone,
+                            service: member.role,
+                            access: member.access,
+                            box: member.box,
+                            login: member.login,
+                            password: member.password,
+                            role: member.role
+                          });
+                          setIsDetailsExpanded(true);
+                          setIsNewAppointmentExpanded(false);
+                        }}
+                        className="p-2 text-gray-500 hover:text-accent-orange transition-all hover:scale-110 active:scale-95"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      {member.role !== 'администратор' && (
+                        <button 
+                          onClick={() => setDeleteConfirm(member.id)}
+                          className="p-2 text-gray-500 hover:text-red-500 transition-all hover:scale-110 active:scale-95"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Modal Placeholders */}
       <AnimatePresence>
-        {isPassModalOpen && (
-          <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-graphite-light w-full max-w-sm rounded-3xl p-8 border border-white/10 relative">
-               <button onClick={() => setIsPassModalOpen(false)} className="absolute top-6 right-6 text-gray-500"><X /></button>
-               <h3 className="text-xl font-bold text-white mb-6">Смена пароля админа</h3>
-               <div className="space-y-4">
-                 <input type="password" placeholder="Текущий пароль" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white" />
-                 <input type="password" placeholder="Новый пароль" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white" />
-                 <button className="w-full py-3 bg-accent-orange rounded-xl font-bold mt-4 shadow-lg shadow-orange-500/20">СОХРАНИТЬ</button>
-               </div>
-             </motion.div>
+        {deleteConfirm && (
+          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#151515] w-full max-w-sm rounded-[32px] p-8 border border-white/10 relative shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+                  <AlertCircle className="w-8 h-8 text-red-500" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2 uppercase tracking-wider">Удалить аккаунт?</h3>
+                <p className="text-gray-400 text-sm mb-8">
+                  Вы уверены, что хотите удалить этот аккаунт? Это действие нельзя будет отменить.
+                </p>
+                <div className="flex gap-4 w-full">
+                  <button 
+                    onClick={() => setDeleteConfirm(null)}
+                    className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-gray-400 font-bold transition-all uppercase tracking-widest text-[10px]"
+                  >
+                    Отмена
+                  </button>
+                  <button 
+                    onClick={handleDelete}
+                    className="flex-1 py-4 bg-red-600 hover:bg-red-700 rounded-2xl text-white font-bold transition-all uppercase tracking-widest text-[10px] shadow-lg shadow-red-600/20"
+                  >
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>

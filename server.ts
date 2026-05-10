@@ -29,6 +29,7 @@ const FEEDBACK_SPREADSHEET_ID = "1_pqTb2M8bGrEK2lzaMAZeFLR4wrwkfCYIm7SfoKKCcg";
 const FAQ_SPREADSHEET_ID = "19MOB7haF0D97sWTebuo0Q4E9d_vVy_SHWAt58GZQDzk";
 const PRICE_SPREADSHEET_ID = "1ryq0AloXjE-FXCz5_BkB8erYrVr8fvzr3SnOg42KTvc";
 const SCHEDULE_SPREADSHEET_ID = "1whc-vJNHIOhJhnT9Sf-eS5l88AbDqF1BAxwNkaKjiEU";
+const STAFF_SPREADSHEET_ID = "1IizFOVizcUsWrTrUEmvKfRmgXKOViAj8S5eHEDOVvJk";
 
 // Simple in-memory cache
 interface CacheEntry {
@@ -40,6 +41,7 @@ const CACHE_TTL: Record<string, number> = {
   faq: 10 * 60 * 1000, // 10 minutes
   prices: 10 * 60 * 1000, // 10 minutes
   appointments: 45 * 1000, // 45 seconds (enough to reduce quota usage significantly)
+  staff: 60 * 1000, // 1 minute
 };
 
 function getFromCache(key: string) {
@@ -181,7 +183,10 @@ async function getAllAppointmentsMapped() {
       clientName: row[11] || "",
       phone: row[12] || "",
       car: row[13] || row[5] || "",
+      finishedTime: row[8] || "",
+      difficulty: row[9] || "",
       sessionId: row[10] || "",
+      note: row[16] || "",
       comment: row[14] || ""
     };
   });
@@ -250,6 +255,23 @@ async function getNextOrderId() {
   return maxId + 1;
 }
 
+async function logScheduleAction(orderId: string | number, action: string, user: string = "Админ") {
+  try {
+    const sheets = await getSheetsClient();
+    const timestamp = getFormattedUTC3Now();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+      range: "schedule_log!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[timestamp, orderId, action, user]]
+      }
+    });
+  } catch (err) {
+    console.error("Failed to log schedule action:", err);
+  }
+}
+
 async function getServiceDuration(serviceName: string) {
   try {
     const cacheKey = "prices:all";
@@ -294,6 +316,14 @@ function formatPhoneNumber(rawPhone: string) {
   }
 
   return `${clean[0]}-(${clean.substring(1, 4)})-${clean.substring(4, 7)}-${clean.substring(7, 9)}-${clean.substring(9, 11)}`;
+}
+
+function getFormattedUTC3Now() {
+  const now = new Date();
+  const utc3 = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const formattedDate = `${pad(utc3.getUTCDate())}.${pad(utc3.getUTCMonth() + 1)}.${utc3.getUTCFullYear()} ${pad(utc3.getUTCHours())}:${pad(utc3.getUTCMinutes())}:${pad(utc3.getUTCSeconds())}`;
+  return formattedDate;
 }
 
 // API Routes
@@ -415,17 +445,17 @@ app.post("/api/schedule/book", async (req, res) => {
     // 1. Check if there's an existing RAW application for this session to update it instead of creating new
     const existingApps = await sheets.spreadsheets.values.get({
       spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-      range: "booking!A:P"
+      range: "booking!A:Q"
     });
     const allRows = existingApps.data.values || [];
     const rowIndex = allRows.findIndex((r: any) => r[10] === sessionId && r[7] === "RAW");
 
-    const appDate = new Date().toLocaleString('ru-RU');
+    const appDate = getFormattedUTC3Now();
 
     if (rowIndex !== -1) {
       await sheets.spreadsheets.values.update({
         spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-        range: `booking!B${rowIndex + 1}:P${rowIndex + 1}`,
+        range: `booking!B${rowIndex + 1}:Q${rowIndex + 1}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [[
@@ -443,7 +473,8 @@ app.post("/api/schedule/book", async (req, res) => {
             formattedPhone,
             car || "", // Car
             whatToDo || "", // What_to_do
-            appDate
+            appDate,
+            "" // Difficulty (placeholder for Column Q)
           ]]
         }
       });
@@ -454,7 +485,7 @@ app.post("/api/schedule/book", async (req, res) => {
     const nextId = await getNextOrderId();
     await sheets.spreadsheets.values.append({
       spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-      range: `booking!A:P`,
+      range: "booking!A:Q",
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [[
@@ -467,13 +498,14 @@ app.post("/api/schedule/book", async (req, res) => {
           duration,
           "Confirmed",
           "", // Finished_time
-          "", // Note
+          "", // Difficulty (index 9)
           sessionId || "",
           clientName,
           formattedPhone,
           car || "", // Car
           whatToDo || "", // What_to_do
-          appDate
+          appDate,
+          "" // Note (index 16)
         ]]
       }
     });
@@ -498,7 +530,7 @@ app.get("/api/applications/last", async (req, res) => {
       const sheets = await getSheetsClient();
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-        range: "booking!A:P",
+        range: "booking!A:Q",
       });
       rows = response.data.values || [];
       setInCache(cacheKey, rows);
@@ -603,7 +635,7 @@ app.post("/api/booking", async (req, res) => {
 
     const sheets = await getSheetsClient();
     const nextId = await getNextOrderId();
-    const appDate = new Date().toLocaleString('ru-RU');
+    const appDate = getFormattedUTC3Now();
 
     const values = [[
       nextId,
@@ -615,18 +647,19 @@ app.post("/api/booking", async (req, res) => {
       "1", // Duration
       "RAW", // Status
       "", // Finished_time
-      "", // Note
+      "", // Difficulty (index 9)
       sessionId || `W-${Date.now()}`,
       name || "", 
       formattedPhone,
       car || "", // Car
       comment || "", // What_to_do
-      appDate // Application_date
+      appDate, // Application_date
+      "" // Note (index 16)
     ]];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SCHEDULE_SPREADSHEET_ID,
-      range: "booking!A:P",
+      range: "booking!A:Q",
       valueInputOption: "USER_ENTERED",
       requestBody: { values },
     });
@@ -728,16 +761,33 @@ app.get("/api/schedule/find", async (req, res) => {
     
     const results = allMapped.filter((app: any) => {
       const name = (app.clientName || "").toLowerCase();
-      const phone = (app.phone || "").replace(/\D/g, "");
+      const phoneRaw = (app.phone || "").replace(/\D/g, "");
       const comment = (app.comment || "").toLowerCase();
       const car = (app.car || "").toLowerCase();
       
-      if (/^\d+$/.test(searchStr) && searchStr.length > 3) {
-        return phone.includes(searchStr);
+      // If searching by phone (at least 4 digits)
+      if (/^\d+$/.test(searchStr) && searchStr.length >= 4) {
+        // Normalize searchStr to 11 digits if it's 10 digits starting with 9
+        let normalizedSearch = searchStr;
+        if (normalizedSearch.length === 10 && normalizedSearch.startsWith('9')) {
+          normalizedSearch = '7' + normalizedSearch;
+        }
+        
+        // Normalize phoneRaw to 11 digits if it's 10 digits starting with 9
+        let normalizedPhone = phoneRaw;
+        if (normalizedPhone.length === 10 && normalizedPhone.startsWith('9')) {
+          normalizedPhone = '7' + normalizedPhone;
+        }
+
+        // Partial match or full match
+        return normalizedPhone.includes(normalizedSearch) || normalizedSearch.includes(normalizedPhone);
       }
-      return name.includes((query as string).toLowerCase()) || 
-             comment.includes((query as string).toLowerCase()) ||
-             car.includes((query as string).toLowerCase());
+
+      // String search
+      const q = (query as string).toLowerCase().trim();
+      return name.includes(q) || 
+             comment.includes(q) ||
+             car.includes(q);
     });
 
     return res.json(results);
@@ -763,15 +813,27 @@ app.post("/api/admin/appointments/status", async (req, res) => {
 
     if (rowIndex === -1) return res.status(404).json({ error: "Appointment not found" });
 
-    // Status is index 7 (H), Finished_time is 8 (I), Note is 9 (J)
+    // Status (7), Finished_time (8), Complexity (9)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SCHEDULE_SPREADSHEET_ID,
       range: `booking!H${rowIndex + 1}:J${rowIndex + 1}`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values: [[status, finishedTime || "", note || ""]]
+        values: [[status, finishedTime || "", req.body.difficulty || ""]]
       }
     });
+
+    // Note is at index 16 (Q)
+    if (note !== undefined) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+        range: `booking!Q${rowIndex + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[note]]
+        }
+      });
+    }
 
     invalidateCache("appointments");
     return res.json({ success: true });
@@ -818,7 +880,7 @@ app.patch("/api/admin/appointments/:orderId/status", async (req, res) => {
 
 app.post("/api/schedule/update", async (req, res) => {
   try {
-    const { orderId, date, time, status, service, car, whatToDo, box, duration, clientName, phone, note } = req.body;
+    const { orderId, date, time, status, service, car, whatToDo, box, duration, clientName, phone, note, finishedTime, difficulty } = req.body;
     if (!orderId) return res.status(400).json({ error: "Missing orderId" });
 
     const sheets = await getSheetsClient();
@@ -833,7 +895,7 @@ app.post("/api/schedule/update", async (req, res) => {
     if (rowIndex === -1) return res.status(404).json({ error: "Appointment not found" });
 
     // We only update what is provided
-    const range = `booking!A${rowIndex + 1}:P${rowIndex + 1}`;
+    const range = `booking!A${rowIndex + 1}:Q${rowIndex + 1}`;
     const currentRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SCHEDULE_SPREADSHEET_ID,
       range: range
@@ -845,18 +907,56 @@ app.post("/api/schedule/update", async (req, res) => {
 
     const currentRow = currentRes.data.values[0];
     const newRow = [...currentRow];
+    const changes: string[] = [];
 
-    if (date !== undefined) newRow[1] = date;
-    if (time !== undefined) newRow[2] = time;
-    if (box !== undefined) newRow[4] = box;
-    if (service !== undefined) newRow[5] = service;
-    if (duration !== undefined) newRow[6] = duration;
-    if (status !== undefined) newRow[7] = status;
-    if (note !== undefined) newRow[9] = note;
-    if (clientName !== undefined) newRow[11] = clientName;
-    if (phone !== undefined) newRow[12] = phone;
-    if (car !== undefined) newRow[13] = car;
-    if (whatToDo !== undefined) newRow[14] = whatToDo;
+    if (date !== undefined && date !== currentRow[1]) {
+      changes.push(`Дата: ${currentRow[1] || 'пусто'} -> ${date}`);
+      newRow[1] = date;
+    }
+    if (time !== undefined && time !== currentRow[2]) {
+      changes.push(`Время: ${currentRow[2] || 'пусто'} -> ${time}`);
+      newRow[2] = time;
+    }
+    if (box !== undefined && box !== currentRow[4]) {
+      changes.push(`Бокс: ${currentRow[4] || 'пусто'} -> ${box}`);
+      newRow[4] = box;
+    }
+    if (service !== undefined && service !== currentRow[5]) {
+      changes.push(`Услуга: ${currentRow[5] || 'пусто'} -> ${service}`);
+      newRow[5] = service;
+    }
+    if (duration !== undefined && duration !== currentRow[6]) {
+      changes.push(`Длит: ${currentRow[6] || 'пусто'} -> ${duration}`);
+      newRow[6] = duration;
+    }
+    if (status !== undefined && status !== currentRow[7]) {
+      changes.push(`Статус: ${currentRow[7] || 'пусто'} -> ${status}`);
+      newRow[7] = status;
+    }
+    if (finishedTime !== undefined && finishedTime !== currentRow[8]) {
+      changes.push(`Заверш: ${currentRow[8] || 'пусто'} -> ${finishedTime}`);
+      newRow[8] = finishedTime;
+    }
+    if (difficulty !== undefined && difficulty !== currentRow[9]) {
+      changes.push(`Слож: ${currentRow[9] || 'пусто'} -> ${difficulty}`);
+      newRow[9] = difficulty;
+    }
+    if (note !== undefined && note !== currentRow[16]) {
+      changes.push(`Заметка изм.`);
+      newRow[16] = note;
+    }
+    if (clientName !== undefined && clientName !== currentRow[11]) {
+      changes.push(`Имя: ${currentRow[11] || 'пусто'} -> ${clientName}`);
+      newRow[11] = clientName;
+    }
+    if (phone !== undefined && phone !== currentRow[12]) {
+      changes.push(`Тел изм.`);
+      newRow[12] = phone;
+    }
+    if (car !== undefined && car !== currentRow[13]) {
+      changes.push(`Авто: ${currentRow[13] || 'пусто'} -> ${car}`);
+      newRow[13] = car;
+    }
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SCHEDULE_SPREADSHEET_ID,
@@ -865,10 +965,98 @@ app.post("/api/schedule/update", async (req, res) => {
       requestBody: { values: [newRow] }
     });
 
+    if (changes.length > 0) {
+      await logScheduleAction(orderId, changes.join("; "));
+    }
+
     invalidateCache("appointments");
     return res.json({ success: true });
   } catch (err: any) {
     console.error("Update error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/schedule/create", async (req, res) => {
+  try {
+    const { date, time, status, service, car, whatToDo, box, duration, clientName, phone, note } = req.body;
+    
+    const sheets = await getSheetsClient();
+    const nextId = await getNextOrderId();
+    const appDate = getFormattedUTC3Now();
+
+    const newRow = [
+      nextId,
+      date || "", 
+      time || "",
+      req.body.garage || "", // Use garage field if provided
+      box || "",
+      service || "",
+      duration || "1",
+      status || "NEW",
+      "", // Finished_time
+      "", // complexity (index 9)
+      `ADMIN-${Date.now()}`, // sessionId
+      clientName || "",
+      phone || "",
+      car || "",
+      whatToDo || service || "",
+      appDate,
+      note || "" // Note (index 16)
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+      range: "booking!A:Q",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [newRow] },
+    });
+
+    await logScheduleAction(nextId, "Запись создана (Админ)");
+
+    invalidateCache("appointments");
+    return res.json({ success: true, orderId: nextId });
+  } catch (err: any) {
+    console.error("Create error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/appointments/:orderId/history", async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ error: "Missing orderId" });
+
+    const sheets = await getSheetsClient();
+    
+    // Fetch from schedule_log sheet
+    let rows: any[][] = [];
+    try {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+        range: "schedule_log!A:D", // Date, OrderID, Change, User
+      });
+      rows = response.data.values || [];
+    } catch (e: any) {
+      console.warn("History sheet not found or empty:", e.message);
+      return res.json([]);
+    }
+
+    if (rows.length <= 1) return res.json([]);
+
+    const dataRows = rows.slice(1);
+    const history = dataRows
+      .filter(row => row[1]?.toString() === orderId.toString())
+      .map(row => ({
+        date: row[0] || "",
+        change: row[2] || "",
+        user: row[3] || "Система"
+      }))
+      .reverse();
+
+    return res.json(history);
+  } catch (err: any) {
+    console.error("Fetch history error:", err);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -907,7 +1095,7 @@ function loadPrompts() {
 
 Стиль общения: Лаконичный, профессиональный, экспертный. Без лишних извинений и воды.
 
-Текущая дата и время: ${new Date().toLocaleString('ru-RU')}`,
+Текущая дата и время: ${getFormattedUTC3Now()}`,
     'report-analysis': `На основе предоставленных данных о записях в боксы, проанализируй загруженность и выяви узкие места. Рассчитай коэффициент полезного действия (КПД) каждого бокса и предложи рекомендации по оптимизации расписания для увеличения пропускной способности.`
   };
   /* SERVER_DEFAULT_PROMPT_END */
@@ -959,7 +1147,7 @@ app.post("/api/admin/prompts/restore", (req, res) => {
 
 Стиль общения: Лаконичный, профессиональный, экспертный. Без лишних извинений и воды.
 
-Текущая дата и время: ${new Date().toLocaleString('ru-RU')}`, 
+Текущая дата и время: ${getFormattedUTC3Now()}`, 
     'report-analysis': `На основе предоставленных данных о записях в боксы, проанализируй загруженность и выяви узкие места. Рассчитай коэффициент полезного действия (КПД) каждого бокса и предложи рекомендации по оптимизации расписания для увеличения пропускной способности.` 
   };
   
@@ -973,6 +1161,155 @@ app.post("/api/admin/prompts/restore", (req, res) => {
     }
   }
   return res.status(404).json({ error: "Default prompt not found" });
+});
+
+app.get("/api/admin/staff", async (req, res) => {
+  try {
+    const cacheKey = "staff:all";
+    let rows = getFromCache(cacheKey);
+
+    if (!rows) {
+      const sheets = await getSheetsClient();
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: STAFF_SPREADSHEET_ID,
+        range: "staff!A:H",
+      });
+      rows = response.data.values || [];
+      setInCache(cacheKey, rows);
+    }
+
+    if (!rows || rows.length <= 1) return res.json([]);
+
+    const dataRows = rows.slice(1);
+    const staff = dataRows.map((row: any) => ({
+      id: row[0],
+      phone: row[1],
+      user_name: row[2],
+      login: row[3],
+      password: row[4],
+      access: row[5],
+      box: row[6],
+      role: row[7],
+    }));
+
+    return res.json(staff);
+  } catch (err: any) {
+    console.error("Staff fetch error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/staff", async (req, res) => {
+  try {
+    const { phone, user_name, login, password, access, box, role } = req.body;
+    const sheets = await getSheetsClient();
+    
+    // Get next ID
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+      range: "staff!A:A",
+    });
+    const ids = response.data.values?.slice(1).map(r => parseInt(r[0])).filter(n => !isNaN(n)) || [];
+    const nextId = ids.length > 0 ? Math.max(...ids) + 1 : 1;
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+      range: "staff!A:H",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[nextId, phone, user_name, login, password, access, box, role]]
+      }
+    });
+
+    invalidateCache("staff");
+    return res.json({ success: true, id: nextId });
+  } catch (err: any) {
+    console.error("Staff create error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/admin/staff/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phone, user_name, login, password, access, box, role } = req.body;
+    const sheets = await getSheetsClient();
+    
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+      range: "staff!A:A",
+    });
+    const rows = response.data.values || [];
+    const rowIndex = rows.findIndex(r => r[0] === id);
+
+    if (rowIndex === -1) return res.status(404).json({ error: "Staff member not found" });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+      range: `staff!A${rowIndex + 1}:H${rowIndex + 1}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[id, phone, user_name, login, password, access, box, role]]
+      }
+    });
+
+    invalidateCache("staff");
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Staff update error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/staff/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sheets = await getSheetsClient();
+    
+    // Deleting in Sheets is tricky (you usually have to batchUpdate)
+    // For simplicity, we can find the row and clear it or move everything up
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+      range: "staff!A:A",
+    });
+    const rows = response.data.values || [];
+    const rowIndex = rows.findIndex(r => r[0] === id);
+
+    if (rowIndex === -1) return res.status(404).json({ error: "Staff member not found" });
+
+    // Get the sheet ID for 'staff'
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+    });
+    const sheet = spreadsheet.data.sheets?.find(s => s.properties?.title === "staff");
+    const sheetId = sheet?.properties?.sheetId;
+
+    if (sheetId === undefined) throw new Error("Staff sheet not found");
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId,
+                dimension: "ROWS",
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1
+              }
+            }
+          }
+        ]
+      }
+    });
+
+    invalidateCache("staff");
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Staff delete error:", err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 async function startServer() {

@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+import { ChevronUp, ChevronDown, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAdminStore, getServiceIdFromGarage } from '../../store/adminStore';
-import EditAppointmentModal from './EditAppointmentModal';
 import { AnimatePresence } from 'motion/react';
 
 interface Appointment {
@@ -37,7 +36,6 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'time', direction: 'asc' });
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
   const { 
     activeStatus, 
     setActiveService, 
@@ -45,7 +43,16 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
     highlightedOrderId, 
     setHighlightedOrderId,
     setSelectedDate,
-    setEndDate
+    setEndDate,
+    selectedAppointment,
+    setSelectedAppointment,
+    isDetailsExpanded,
+    setIsDetailsExpanded,
+    isNewAppointmentExpanded,
+    setIsNewAppointmentExpanded,
+    setNewAppointmentDraft,
+    refreshKey,
+    isPickingNewTime
   } = useAdminStore();
 
   useEffect(() => {
@@ -61,8 +68,8 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
     { label: 'НОВАЯ', code: 'NEW' },
     { label: 'ОТМЕНЁННАЯ', code: 'CANCELLED' },
     { label: 'ПОДТВЕРЖДЕННАЯ', code: 'CONFIRMED' },
-    { label: 'ЗАВЕРШЕННАЯ', code: 'COMPLETED' },
-    { label: 'ЗАКРЫТАЯ', code: 'CLOSED' }
+    { label: 'ВЫПОЛНЕННАЯ', code: 'COMPLETED' },
+    { label: 'ОПЛАЧЕНО', code: 'PAID' }
   ];
 
   const handleStatusUpdate = async (e: React.MouseEvent, orderId: string, newStatus: string) => {
@@ -121,7 +128,7 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
     fetchAppointments();
     const interval = setInterval(fetchAppointments, 5000);
     return () => clearInterval(interval);
-  }, [date, endDate, garageFilter, boxFilter, pendingMode]);
+  }, [date, endDate, garageFilter, boxFilter, pendingMode, refreshKey]);
 
   const isPending = (app: Appointment) => {
     const status = (app.status || "").toUpperCase();
@@ -157,7 +164,7 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
         switch (activeStatus) {
           case 'Новые':
             return !s || s === 'NEW' || s === 'RAW';
-          case 'Завершенные':
+          case 'Выполненные':
             return s === 'COMPLETED';
           case 'Просроченные':
             // Overdue is specifically CONFIRMED but past time
@@ -177,8 +184,8 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
             return s === 'CANCELLED';
           case 'Подтвержденные':
             return s === 'CONFIRMED';
-          case 'Закрытые':
-            return s === 'CLOSED';
+          case 'Оплачено':
+            return s === 'CLOSED' || s === 'PAID';
           default:
             return true;
         }
@@ -249,6 +256,7 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
         return 'text-red-500 bg-red-500/10 border-red-500/20';
       case 'COMPLETED':
         return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+      case 'PAID':
       case 'CLOSED':
         return 'text-gray-400 bg-black border-white/10';
       default:
@@ -258,6 +266,11 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
 
   const handleTimeClick = (e: React.MouseEvent, app: Appointment) => {
     e.stopPropagation();
+    
+    // Ensure we exit new appointment mode if clicking a record
+    if (isNewAppointmentExpanded) {
+      setIsNewAppointmentExpanded(false);
+    }
     
     // Normalize date to yyyy-mm-dd
     let targetDate = app.date;
@@ -269,14 +282,6 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
     setSelectedDate(targetDate);
     setEndDate(null);
     
-    const serviceId = getServiceIdFromGarage(app.garage);
-    setActiveService(serviceId);
-    setActiveView('grid');
-    setHighlightedOrderId(app.orderId);
-  };
-
-  const handleServiceClick = (e: React.MouseEvent, app: Appointment) => {
-    e.stopPropagation();
     const serviceId = getServiceIdFromGarage(app.garage);
     setActiveService(serviceId);
     setActiveView('grid');
@@ -307,11 +312,54 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
 
   const showDateColumn = !!endDate || !!pendingMode;
 
+  const getHeaderDateLabel = () => {
+    if (pendingMode === 'all') return 'ожидающие обработки заявки';
+    if (!endDate || date === endDate) return formatDateDisplay(date);
+    return `${formatDateDisplay(date)} — ${formatDateDisplay(endDate)}`;
+  };
+
+  const navigateDate = (direction: 'prev' | 'next') => {
+    const d = new Date(date);
+    if (direction === 'prev') {
+      d.setDate(d.getDate() - 1);
+    } else {
+      d.setDate(d.getDate() + 1);
+    }
+    const newDate = d.toISOString().split('T')[0];
+    setSelectedDate(newDate);
+    setEndDate(null);
+  };
+
   return (
     <div className="bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl w-full">
       <div className="overflow-auto max-h-[calc(100vh-120px)] relative">
+        <div className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/10 h-[50px] flex items-center justify-center">
+          <div className="flex items-center justify-center gap-4 w-full max-w-2xl px-4">
+            <div className="h-[1px] bg-gradient-to-r from-transparent to-accent-orange/40 flex-1" />
+            {!endDate && !pendingMode && (
+              <button 
+                onClick={() => navigateDate('prev')}
+                className="p-1 hover:bg-white/10 rounded-full transition-colors text-accent-orange/50 hover:text-accent-orange"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            )}
+            <span className="text-[12px] h-[30px] flex items-center justify-center font-black uppercase tracking-[0.3em] text-accent-orange px-6 border border-accent-orange/30 rounded-full bg-accent-orange/10 shadow-[0_0_20px_rgba(255,165,0,0.1)]">
+              {getHeaderDateLabel()}
+            </span>
+            {!endDate && !pendingMode && (
+              <button 
+                onClick={() => navigateDate('next')}
+                className="p-1 hover:bg-white/10 rounded-full transition-colors text-accent-orange/50 hover:text-accent-orange"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
+            <div className="h-[1px] bg-gradient-to-l from-transparent to-accent-orange/40 flex-1" />
+          </div>
+        </div>
         <table className="w-full text-left border-collapse font-sans">
-          <thead className="sticky top-0 z-40 bg-graphite-light shadow-2xl">
+          <thead className="sticky top-[50px] z-40 bg-graphite-light shadow-2xl">
             <tr className="bg-black border-b border-white/10">
               <th 
                 onClick={() => handleSort('orderId')}
@@ -384,12 +432,71 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.05 }}
                   key={`${app.orderId}-${idx}`} 
-                  onDoubleClick={(e) => {
+                   onDoubleClick={(e) => {
                     const target = e.target as HTMLElement;
-                    if (target.closest('button')) return;
-                    setEditingAppointment(app);
+                    if (target.closest('button') || target.closest('[data-no-sidebar]')) return;
+                    if (isPickingNewTime) return;
+                    
+                    if (isNewAppointmentExpanded) {
+                      if ((app.status || "").toUpperCase() === 'CANCELLED') {
+                        setNewAppointmentDraft({
+                          date: app.date,
+                          time: app.time,
+                          garage: app.garage,
+                          box: app.box
+                        });
+                        return;
+                      } else {
+                        setIsNewAppointmentExpanded(false);
+                      }
+                    }
+
+                    if (selectedAppointment?.orderId === app.orderId) {
+                      if (isDetailsExpanded) {
+                        setSelectedAppointment(null);
+                      } else {
+                        setIsDetailsExpanded(true);
+                      }
+                    } else {
+                      setSelectedAppointment(app as any);
+                      setIsDetailsExpanded(true);
+                    }
                   }}
-                  className={`hover:bg-white/5 transition-colors group cursor-pointer ${app.orderId === highlightedOrderId ? 'bg-accent-orange/10 border-l-2 border-accent-orange' : ''}`}
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest('button') || target.closest('[data-no-sidebar]')) return;
+                    if (isPickingNewTime) return;
+                    
+                    if (isNewAppointmentExpanded) {
+                      if ((app.status || "").toUpperCase() === 'CANCELLED') {
+                        setNewAppointmentDraft({
+                          date: app.date,
+                          time: app.time,
+                          garage: app.garage,
+                          box: app.box
+                        });
+                        return;
+                      } else {
+                        setIsNewAppointmentExpanded(false);
+                      }
+                    }
+
+                    if (selectedAppointment?.orderId === app.orderId) {
+                      if (isDetailsExpanded) {
+                        setSelectedAppointment(null);
+                      } else {
+                        setIsDetailsExpanded(true);
+                      }
+                    } else {
+                      setSelectedAppointment(app as any);
+                      setIsDetailsExpanded(true);
+                    }
+                  }}
+                  className={`hover:bg-white/5 transition-colors group cursor-pointer ${
+                    (app.orderId === highlightedOrderId || selectedAppointment?.orderId === app.orderId) 
+                      ? 'bg-accent-orange/15 border-l-2 border-accent-orange' 
+                      : ''
+                  }`}
                 >
                   <td className="p-4 pl-8 font-mono text-xs text-gray-500">
                     <div className="flex items-center gap-2">
@@ -404,9 +511,12 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                       {formatDateDisplay(app.date)}
                     </td>
                   )}
-                  <td className="p-4" onClick={(e) => handleTimeClick(e, app)}>
+                  <td className="p-4" onClick={(e) => handleTimeClick(e, app)} data-no-sidebar>
                     <div className="flex items-center gap-2">
-                      <span className={`text-[12px] font-black px-2 py-1 rounded border transition-all cursor-pointer hover:scale-105 active:scale-95 ${getStatusStyle(app.status)}`}>
+                      <span 
+                        className={`text-[12px] font-black px-2 py-1 rounded border transition-all cursor-pointer hover:scale-105 active:scale-95 ${getStatusStyle(app.status)}`}
+                        style={{ color: '#a4b0cd' }}
+                      >
                         &nbsp;{app.time || '--:--'}
                       </span>
                       {app.duration > 1 && (
@@ -414,7 +524,7 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                       )}
                     </div>
                   </td>
-                  <td className="p-4 align-top" onClick={(e) => handleServiceClick(e, app)}>
+                  <td className="p-4 align-top">
                     <div className="flex flex-col gap-1 items-start">
                       {garageFilter ? (
                         <>
@@ -443,7 +553,7 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                     </div>
                   </td>
                   <td className="p-4 text-xs text-gray-400 font-medium">{garageFilter ? (app.car || '—') : (app.car || app.service)}</td>
-                  <td className="p-4 pr-8 text-left relative">
+                  <td className="p-4 pr-8 text-left relative" data-no-sidebar>
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -456,11 +566,11 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
                         (app.status || "").toUpperCase() === 'RAW' || (app.status || "").toUpperCase() === 'NEW' ? 'bg-yellow-500' :
                         (app.status || "").toUpperCase() === 'CANCELLED' ? 'bg-red-500' :
                         (app.status || "").toUpperCase() === 'COMPLETED' ? 'bg-blue-400' :
-                        (app.status || "").toUpperCase() === 'CLOSED' ? 'bg-black border border-white/20' :
+                        (app.status || "").toUpperCase() === 'PAID' || (app.status || "").toUpperCase() === 'CLOSED' ? 'bg-black border border-white/20' :
                         'bg-gray-500'
                       }`} />
-                      {(app.status || "").toUpperCase() === 'CLOSED' ? 'ЗАКРЫТАЯ' : 
-                       (app.status || "").toUpperCase() === 'COMPLETED' ? 'ЗАВЕРШЕННАЯ' :
+                      {(app.status || "").toUpperCase() === 'PAID' || (app.status || "").toUpperCase() === 'CLOSED' ? 'ОПЛАЧЕНО' : 
+                       (app.status || "").toUpperCase() === 'COMPLETED' ? 'ВЫПОЛНЕННАЯ' :
                        (app.status || "").toUpperCase() === 'CONFIRMED' ? 'ПОДТВЕРЖДЕННАЯ' :
                        (app.status || "").toUpperCase() === 'CANCELLED' ? 'ОТМЕНЕННАЯ' :
                        'НОВАЯ'}
@@ -489,18 +599,6 @@ export default function AppointmentTable({ date, endDate, garageFilter, boxFilte
           </tbody>
         </table>
       </div>
-
-      <AnimatePresence>
-        {editingAppointment && (
-          <EditAppointmentModal
-            appointment={editingAppointment}
-            onClose={() => setEditingAppointment(null)}
-            onSave={(updated) => {
-              setAppointments(prev => prev.map(a => a.orderId === updated.orderId ? { ...a, ...updated } : a));
-            }}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

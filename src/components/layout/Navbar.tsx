@@ -19,7 +19,9 @@ import {
   Sparkles,
   LayoutGrid,
   List,
-  AlertTriangle
+  AlertTriangle,
+  LogOut,
+  Home
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -103,9 +105,19 @@ export default function Navbar() {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmenuOpen, setIsSubmenuOpen] = useState(false);
+  const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   
   const isAdmin = location.pathname.startsWith('/admin');
+  const isAccounts = location.pathname === '/admin/accounts';
+
+  const adminMenuLinks = [
+    { name: 'Главная', href: '/', icon: Home },
+    { name: 'Расписание', href: '/admin', icon: Calendar },
+    { name: 'Аккаунты', href: '/admin/accounts', icon: Users },
+    { name: 'Статистика', href: '/admin/charts', icon: BarChart3 },
+    { name: 'Настройки', href: '/admin/agents', icon: Bot },
+  ];
   
   const { 
     selectedDate, 
@@ -132,6 +144,7 @@ export default function Navbar() {
   const [allPendingAppointments, setAllPendingAppointments] = useState<any[]>([]);
   const [totalPendingCount, setTotalPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [staff, setStaff] = useState<any[]>([]);
 
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('ru-RU', { hour12: false, timeZone: 'Europe/Moscow' }));
   const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('ru-RU', { 
@@ -200,12 +213,47 @@ export default function Navbar() {
     return () => clearInterval(interval);
   }, [selectedDate, endDate, isAdmin, hasDoneInitialRedirect]);
 
+  useEffect(() => {
+    if (!isAccounts) return;
+    const fetchStaff = async () => {
+      try {
+        const res = await fetch('/api/admin/staff');
+        if (res.ok) {
+          const data = await res.json();
+          setStaff(data);
+        }
+      } catch (err) {
+        console.error('Navbar staff fetch error:', err);
+      }
+    };
+    fetchStaff();
+    const interval = setInterval(fetchStaff, 30000);
+    return () => clearInterval(interval);
+  }, [isAccounts]);
+
+  const getGarageCount = (fullLabel: string) => {
+    return staff.filter(s => s.access === fullLabel).length;
+  };
+
   const getServiceCount = (id: string, fullLabel: string) => {
+    if (isAccounts) {
+      if (id === 'General') return staff.length;
+      return getGarageCount(fullLabel);
+    }
     if (id === 'General') return appointments.length;
     return appointments.filter(a => a.garage === fullLabel).length;
   };
 
   const getBoxCount = (boxName: string) => {
+    if (isAccounts) {
+      const currentServiceLabel = services.find(s => s.id === activeService)?.fullLabel;
+      let filtered = staff;
+      if (activeService !== 'General') {
+        filtered = filtered.filter(s => s.garage === currentServiceLabel);
+      }
+      if (boxName === 'Все') return filtered.length;
+      return filtered.filter(s => s.box === boxName).length;
+    }
     const currentServiceLabel = services.find(s => s.id === activeService)?.fullLabel;
     let filtered = appointments;
     if (activeService !== 'General') {
@@ -216,6 +264,7 @@ export default function Navbar() {
   };
 
   const getBoxDuration = (boxName: string) => {
+    if (isAccounts) return 0;
     const currentServiceLabel = services.find(s => s.id === activeService)?.fullLabel;
     let filtered = appointments;
     if (activeService !== 'General') {
@@ -233,25 +282,74 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className={`flex justify-between items-center ${isAdmin ? 'py-2 min-h-[5rem]' : 'h-20'}`}>
           <div className="flex flex-col shrink-0">
-            <Link to="/" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 bg-accent-orange rounded flex items-center justify-center transition-transform group-hover:rotate-12">
-                <Settings className="text-white w-5 h-5" />
-              </div>
-              <span className="text-lg font-display font-bold tracking-tighter text-white whitespace-nowrap">
-                AUTOTECH <span className="text-accent-orange">SOLUTIONS</span>
-              </span>
-            </Link>
+            <div 
+              className="relative"
+              onMouseEnter={() => isAuthenticated && setIsAdminMenuOpen(true)}
+              onMouseLeave={() => isAuthenticated && setIsAdminMenuOpen(false)}
+            >
+              <Link to="/" className="flex items-center gap-2 group">
+                <div className="w-8 h-8 bg-accent-orange rounded flex items-center justify-center transition-transform group-hover:rotate-12">
+                  {isAuthenticated ? <Menu className="text-white w-5 h-5" /> : <Settings className="text-white w-5 h-5" />}
+                </div>
+                <span className="text-lg font-display font-bold tracking-tighter text-white whitespace-nowrap">
+                  AUTOTECH <span className="text-accent-orange">SOLUTIONS</span>
+                </span>
+              </Link>
+
+              {isAuthenticated && (
+                <AnimatePresence>
+                  {isAdminMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute top-full left-0 mt-2 w-56 bg-graphite-light border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-2 z-[9999]"
+                    >
+                      <div className="space-y-1">
+                        {adminMenuLinks.map((link) => {
+                          const isActive = location.pathname === link.href;
+                          return (
+                            <Link
+                              key={link.href}
+                              to={link.href}
+                              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group/item ${
+                                isActive 
+                                  ? 'bg-accent-orange text-white' 
+                                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+                              }`}
+                            >
+                              <link.icon className={`w-4 h-4 ${isActive ? 'text-white' : 'group-hover/item:text-accent-orange'} transition-colors`} />
+                              <span className="text-xs font-bold">{link.name}</span>
+                            </Link>
+                          );
+                        })}
+                        <div className="h-px bg-white/5 my-1" />
+                        <button
+                          onClick={() => useAuthStore.getState().logout()}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-500 hover:bg-red-500/10 transition-all group/logout"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span className="text-xs font-bold uppercase tracking-widest">Выход</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
+            </div>
             {isAdmin && (
               <div className="mt-1 ml-10 flex flex-col items-start relative z-[9001]">
-                <CompactCalendar 
-                  selectedDate={selectedDate} 
-                  endDate={endDate}
-                  onRangeChange={(start, end) => {
-                    setSelectedDate(start);
-                    setEndDate(end);
-                  }}
-                />
-                <div className="flex flex-col items-center ml-2 w-full max-w-[120px]">
+                {!isAccounts && (
+                  <CompactCalendar 
+                    selectedDate={selectedDate} 
+                    endDate={endDate}
+                    onRangeChange={(start, end) => {
+                      setSelectedDate(start);
+                      setEndDate(end);
+                    }}
+                  />
+                )}
+                <div className={`flex flex-col items-center ${isAccounts ? 'ml-0' : 'ml-2'} w-full max-w-[120px]`}>
                   <div 
                     className="mt-1.5 font-black tracking-[0.2em]"
                     style={{ 
@@ -265,13 +363,7 @@ export default function Navbar() {
                     {currentTime}
                   </div>
                   <div 
-                    onClick={() => {
-                      const moscowTime = new Date().toLocaleString('en-CA', { timeZone: 'Europe/Moscow', hour12: false });
-                      const today = moscowTime.split(',')[0];
-                      setSelectedDate(today);
-                      setEndDate(null);
-                    }}
-                    className="cursor-pointer hover:brightness-125 transition-all w-full"
+                    className="w-full"
                     style={{ 
                       fontStyle: 'normal',
                       fontWeight: 'normal',
@@ -294,68 +386,74 @@ export default function Navbar() {
 
           {/* Admin Specific Header Controls */}
           {isAdmin ? (
-            <div className="hidden lg:flex flex-col items-start gap-2 flex-grow px-8 py-1">
+            <div className={`hidden lg:flex flex-col flex-grow px-8 ${isAccounts ? 'self-stretch justify-start pt-[25px] items-start' : 'items-start gap-2 py-1'}`}>
               {/* Service Selection Tabs */}
-              <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
-                {/* Unprocessed Applications Button */}
-                <button
-                  onClick={() => {
-                    setActiveService('General');
-                    setActiveBox('Все');
-                    setActiveView('log');
-                    setPendingFilter('all');
-                    setActiveStatus('Все');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
-                    pendingFilter === 'all'
-                      ? 'bg-[#ffbf00]/10 text-[#ffbf00] border-[#ffbf00] shadow-[0_0_15px_rgba(255,191,0,0.1)]' 
-                      : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
-                  }`}
-                >
-                  <AlertTriangle 
-                    className="w-[18px] h-[18px]" 
-                    style={{ color: '#ffbf00' }} 
-                  />
-                  {!loading && (
-                    <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[12px] font-black transition-colors ${
-                      pendingFilter === 'all' ? 'text-black bg-[#ffbf00]' : 'text-[#ffbf00] bg-[#393434]'
-                    }`}>
-                      {totalPendingCount}
-                    </span>
-                  )}
-                </button>
-
-                {services.map((service) => (
+              {isAccounts ? (
+                <div className="flex items-center text-[28px] font-bold text-white whitespace-nowrap leading-none">
+                  Управление аккаунтами
+                </div>
+              ) : (
+                <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
+                  {/* Unprocessed Applications Button */}
                   <button
-                    key={service.id}
                     onClick={() => {
-                      setPendingFilter(null);
-                      setActiveService(service.id as ServiceType);
+                      setActiveService('General');
                       setActiveBox('Все');
-                      setActiveView('grid');
+                      setActiveView('log');
+                      setPendingFilter('all');
+                      setActiveStatus('Все');
                     }}
                     className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
-                      activeService === service.id && !pendingFilter
-                        ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                      pendingFilter === 'all'
+                        ? 'bg-[#ffbf00]/10 text-[#ffbf00] border-[#ffbf00] shadow-[0_0_15px_rgba(255,191,0,0.1)]' 
                         : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
                     }`}
                   >
-                    <service.icon className="w-3 h-3" />
-                    {service.fullLabel}
+                    <AlertTriangle 
+                      className="w-[18px] h-[18px]" 
+                      style={{ color: '#ffbf00' }} 
+                    />
                     {!loading && (
-                      <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[12px] font-black border-none transition-colors ${
-                        activeService === service.id && !pendingFilter ? 'text-white bg-accent-orange' : 'text-accent-orange bg-[#393434]'
+                      <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[12px] font-black transition-colors ${
+                        pendingFilter === 'all' ? 'text-black bg-[#ffbf00]' : 'text-[#ffbf00] bg-[#393434]'
                       }`}>
-                        {getServiceCount(service.id, service.fullLabel)}
+                        {totalPendingCount}
                       </span>
                     )}
                   </button>
-                ))}
-              </div>
+
+                  {services.map((service) => (
+                    <button
+                      key={service.id}
+                      onClick={() => {
+                        setPendingFilter(null);
+                        setActiveService(service.id as ServiceType);
+                        setActiveBox('Все');
+                        setActiveView('grid');
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
+                        activeService === service.id && !pendingFilter
+                          ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                          : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
+                      }`}
+                    >
+                      <service.icon className="w-3 h-3" />
+                      {service.fullLabel}
+                      {!loading && (
+                        <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[12px] font-black border-none transition-colors ${
+                          activeService === service.id && !pendingFilter ? 'text-white bg-accent-orange' : 'text-accent-orange bg-[#393434]'
+                        }`}>
+                          {getServiceCount(service.id, service.fullLabel)}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* View & Box Toggles - Fixed height container to prevent layout shifts */}
               <div className="h-8 flex items-center gap-2">
-                {pendingFilter === 'all' ? (
+                {isAccounts ? null : pendingFilter === 'all' ? (
                   <motion.div 
                     initial={{ opacity: 0, y: -5 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -372,7 +470,7 @@ export default function Navbar() {
                       {[
                         { label: 'ВСЕ', code: 'Все' }, 
                         { label: 'НОВЫЕ', code: 'Новые' }, 
-                        { label: 'ЗАВЕРШЕННЫЕ', code: 'Завершенные' }, 
+                        { label: 'ВЫПОЛНЕННЫЕ', code: 'Выполненные' }, 
                         { label: 'ПРОСРОЧЕННЫЕ', code: 'Просроченные' }
                       ].map((filter) => (
                         <button
@@ -393,7 +491,7 @@ export default function Navbar() {
                                 if (filter.code === 'Все') return true;
                                 const s = (app.status || "").toUpperCase();
                                 if (filter.code === 'Новые') return s === 'NEW' || s === 'RAW';
-                                if (filter.code === 'Завершенные') return s === 'COMPLETED';
+                                if (filter.code === 'Выполненные') return s === 'COMPLETED';
                                 if (filter.code === 'Просроченные') {
                                   if (s !== 'CONFIRMED') return false;
                                   const now = new Date();
@@ -416,39 +514,48 @@ export default function Navbar() {
                       ))}
                     </div>
                   </motion.div>
-                ) : activeService !== 'General' ? (
+                ) : (!isAccounts && activeService !== 'General') ? (
                   <motion.div 
                     initial={{ opacity: 0, y: -5 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="flex items-center gap-2"
                   >
                     <div className="flex gap-1 bg-black/20 p-1 rounded-xl border border-white/5 h-fit">
-                      <button
-                        onClick={() => setActiveView('log')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
-                          activeView === 'log' 
-                            ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
-                            : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
-                        }`}
-                      >
-                        <List className="w-3 h-3" />
-                        Журнал записей
-                      </button>
-                      <button
-                        onClick={() => setActiveView('grid')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
-                          activeView === 'grid' 
-                            ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
-                            : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
-                        }`}
-                      >
-                        <LayoutGrid className="w-3 h-3" />
-                        График
-                      </button>
+                      {isAccounts ? (
+                        <div className="flex items-center px-6 h-[33px] text-lg font-black uppercase tracking-[0.25em] text-white whitespace-nowrap">
+                          Управление аккаунтами
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setActiveView('log')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
+                              activeView === 'log' 
+                                ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                                : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
+                            }`}
+                          >
+                            <List className="w-3 h-3" />
+                            Журнал записей
+                          </button>
+                          <button
+                            onClick={() => setActiveView('grid')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 h-[33px] rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${
+                              activeView === 'grid' 
+                                ? 'bg-accent-orange/10 text-accent-orange border-accent-orange shadow-[0_0_15px_rgba(255,165,0,0.1)]' 
+                                : 'text-gray-400 bg-white/5 border-white/5 hover:text-white hover:bg-white/10 hover:border-white/10'
+                            }`}
+                          >
+                            <LayoutGrid className="w-3 h-3" />
+                            График
+                          </button>
+                        </>
+                      )}
                     </div>
 
-                    <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
-                      {['Все', 'Бокс А', 'Бокс Б', 'Бокс В'].map((box) => (
+                    {!isAccounts && (
+                      <div className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
+                        {['Все', 'Бокс А', 'Бокс Б', 'Бокс В'].map((box) => (
                         <button
                           key={box}
                           onClick={() => setActiveBox(box)}
@@ -461,33 +568,34 @@ export default function Navbar() {
                           {box}
                           {!loading && (
                             <div className="flex items-center gap-1">
-                              {box !== 'Все' ? (
-                                <>
-                                  <span className={`px-1.5 rounded text-[12px] font-black border border-white/5 transition-colors ${
-                                    activeBox === box ? 'bg-accent-orange text-white border-transparent' : 'bg-[#393434] text-accent-orange'
-                                  }`}>
-                                    {getBoxCount(box)}
-                                  </span>
-                                  <span className={`text-[10px] font-bold italic lowercase opacity-60 ${activeBox === box ? 'text-white' : 'text-gray-400'}`}>
-                                    &nbsp; {getBoxDuration(box)} ч
-                                  </span>
-                                </>
-                              ) : null}
+                              {box !== 'Все' && (
+                                <span className={`px-1.5 rounded text-[12px] font-black border border-white/5 transition-colors ${
+                                  activeBox === box ? 'bg-accent-orange text-white border-transparent' : 'bg-[#393434] text-accent-orange'
+                                }`}>
+                                  {getBoxCount(box)}
+                                </span>
+                              )}
+                              {!isAccounts && box !== 'Все' && (
+                                <span className={`text-[10px] font-bold italic lowercase opacity-60 ${activeBox === box ? 'text-white' : 'text-gray-400'}`}>
+                                  &nbsp; {getBoxDuration(box)} ч
+                                </span>
+                              )}
                             </div>
                           )}
                         </button>
                       ))}
                     </div>
+                    )}
                   </motion.div>
-                ) : (
+                ) : !isAccounts ? (
                   /* Placeholder when General is active to maintain height and position */
-                  <div className="flex gap-1 items-center bg-white/5 p-1 rounded-xl border border-white/5 h-fit">
+                  <div className="flex gap-1 items-center bg-black/20 p-1 rounded-xl border border-white/5 h-fit">
                     <div className="flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-500">
                       <List className="w-3 h-3" />
                       Журнал записей
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           ) : (
@@ -606,12 +714,7 @@ export default function Navbar() {
           {/* Desktop/Mobile Right Actions for Admin */}
           {isAdmin && (
              <div className="hidden md:flex items-center gap-4">
-                <button
-                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                  className="p-2 text-gray-400 hover:text-white"
-                >
-                  <Menu className="w-5 h-5" />
-                </button>
+                {/* Right side menu button removed as per request */}
              </div>
           )}
 

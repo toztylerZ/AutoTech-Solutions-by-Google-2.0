@@ -7,6 +7,7 @@ interface GarageBookingSummaryProps {
   endDate?: string | null;
   garageFilter?: string;
   isSidebar?: boolean;
+  isAccountsPage?: boolean;
 }
 
 const GARAGES = [
@@ -17,14 +18,59 @@ const GARAGES = [
 
 const BOXES = ['Бокс А', 'Бокс Б', 'Бокс В'];
 
-export default function GarageBookingSummary({ date, endDate, garageFilter, isSidebar }: GarageBookingSummaryProps) {
+export default function GarageBookingSummary({ date, endDate, garageFilter, isSidebar, isAccountsPage }: GarageBookingSummaryProps) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { activeService, setActiveService, activeBox, setActiveBox, activeStatus, setActiveStatus, pendingFilter, setPendingFilter } = useAdminStore();
+  const { 
+    activeService, 
+    setActiveService, 
+    activeBox, 
+    setActiveBox, 
+    activeStatus, 
+    setActiveStatus, 
+    pendingFilter, 
+    setPendingFilter,
+    refreshKey 
+  } = useAdminStore();
   const [totalAppointments, setTotalAppointments] = useState<any[]>([]);
   const [globalTodayApps, setGlobalTodayApps] = useState<any[]>([]);
+  const [staff, setStaff] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!isAccountsPage) return;
+    const fetchStaff = async () => {
+      try {
+        const res = await fetch('/api/admin/staff');
+        if (res.ok) {
+          const data = await res.json();
+          setStaff(data);
+        }
+      } catch (err) {
+        console.error('Fetch staff error:', err);
+      }
+    };
+    fetchStaff();
+  }, [isAccountsPage, refreshKey]);
+
+  useEffect(() => {
+    if (!isAccountsPage) return;
+    const fetchStaff = async () => {
+      try {
+        const res = await fetch('/api/admin/staff');
+        if (res.ok) {
+          const data = await res.json();
+          setStaff(data);
+        }
+      } catch (err) {
+        console.error('Fetch staff error:', err);
+      }
+    };
+    const interval = setInterval(fetchStaff, 10000);
+    return () => clearInterval(interval);
+  }, [isAccountsPage]);
+
+  useEffect(() => {
+    if (isAccountsPage) return;
     const fetchGlobalToday = async () => {
       try {
         let url = `/api/admin/appointments?date=${date}`;
@@ -177,7 +223,10 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
     }).length,
     confirmed: filteredApps.filter(a => (a.status || "").toUpperCase() === 'CONFIRMED').length,
     completed: filteredApps.filter(a => (a.status || "").toUpperCase() === 'COMPLETED').length,
-    closed: filteredApps.filter(a => (a.status || "").toUpperCase() === 'CLOSED').length,
+    paid: filteredApps.filter(a => {
+      const s = (a.status || "").toUpperCase();
+      return s === 'CLOSED' || s === 'PAID';
+    }).length,
     cancelled: filteredApps.filter(a => (a.status || "").toUpperCase() === 'CANCELLED').length,
   };
 
@@ -200,22 +249,76 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
       : `Записей на ${formatDate(date)}`;
   const sidebarLabel = currentLabel;
 
+  if (isSidebar && isAccountsPage) {
+    const accountFilters = [
+      { label: 'Все аккаунты', count: staff.length, color: 'text-white' },
+      { label: 'Слесарный ремонт и ТО', count: staff.filter(s => (s.access || '').toLowerCase().trim() === 'слесарный ремонт и то').length, color: 'text-blue-400' },
+      { label: 'Электрика и диагностика', count: staff.filter(s => (s.access || '').toLowerCase().trim() === 'электрика и диагностика').length, color: 'text-purple-400' },
+      { label: 'Детейлинг и покрытия', count: staff.filter(s => (s.access || '').toLowerCase().trim() === 'детейлинг и покрытия').length, color: 'text-emerald-400' },
+      { label: 'Менеджеры', count: staff.filter(s => (s.role || '').toLowerCase() === 'менеджер').length, color: 'text-yellow-400' },
+      { label: 'Администраторы', count: staff.filter(s => (s.role || '').toLowerCase() === 'администратор').length, color: 'text-red-400' }
+    ];
+
+    return (
+      <div className="flex flex-col gap-6 px-4 pb-4 pt-6">
+        <div className="space-y-4">
+          <div className="mb-2 text-[12px] h-[68px] flex items-center">
+            <div className="flex flex-col">
+              <div className="text-[12px] font-black uppercase tracking-[0.2em] text-white">
+                СПИСОК СОТРУДНИКОВ
+              </div>
+              <div className="h-px w-8 bg-accent-orange mt-1" />
+            </div>
+          </div>
+          
+          <div className="space-y-1">
+            {accountFilters.map(af => {
+              const filterValue = af.label === 'Все аккаунты' ? 'Все' : af.label;
+              const isSelected = activeStatus === filterValue || (filterValue === 'Все' && (!activeStatus || activeStatus === 'Все'));
+
+              return (
+                <button 
+                  key={af.label} 
+                  onClick={() => setActiveStatus(filterValue)}
+                  className={`w-full flex justify-between items-center rounded-lg px-3 py-[3px] border transition-all active:scale-[0.98] ${
+                    isSelected
+                      ? 'bg-white/10 border-white/20 shadow-lg' 
+                      : 'bg-white/3 border-white/3 hover:bg-white/5 hover:border-white/5'
+                  }`}
+                >
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                    isSelected ? 'text-white' : ''
+                  }`} style={{ color: isSelected ? undefined : '#e1e1e1' }}>{af.label}</span>
+                  <span className={`text-xs font-black ${
+                     isSelected ? 'text-white' : af.color
+                  }`}>{af.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isSidebar) {
     const serviceName = activeService === 'General' 
       ? 'ВСЕ ЗАПИСИ' 
       : GARAGES.find(g => g.id === activeService)?.name || activeService;
 
     return (
-      <div className="flex flex-col gap-6 p-4">
+      <div className="flex flex-col gap-6 px-4 pb-4 pt-6">
         {!pendingFilter && (
           <div className="space-y-4">
-            <div className="mb-2 text-[12px]">
-              <div className="text-[12px] font-black uppercase tracking-[0.2em] text-white">
-                {serviceName}
+            <div className="mb-2 text-[12px] h-[68px] flex items-center">
+              <div className="flex flex-col">
+                <div className="text-[12px] font-black uppercase tracking-[0.2em] text-white">
+                  {serviceName}
+                </div>
+                <div className="h-px w-8 bg-accent-orange mt-1" />
               </div>
-              <div className="h-0.5 w-8 bg-accent-orange mt-1" />
             </div>
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
+            <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
               <span className="w-1.5 h-1.5 rounded-full bg-accent-orange animate-pulse" />
               {sidebarLabel}
             </div>
@@ -226,8 +329,8 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
                 { label: 'Новые', value: statusCounts.new, color: 'text-yellow-400' },
                 { label: 'Отмененные', value: statusCounts.cancelled, color: 'text-red-400' },
                 { label: 'Подтвержденные', value: statusCounts.confirmed, color: 'text-green-400' },
-                { label: 'Завершенные', value: statusCounts.completed, color: 'text-blue-400' },
-                { label: 'Закрытые', value: statusCounts.closed, color: 'text-gray-400' }
+                { label: 'Выполненные', value: statusCounts.completed, color: 'text-blue-400' },
+                { label: 'Оплачено', value: statusCounts.paid, color: 'text-gray-400' }
               ].map(s => (
                 <button 
                   key={s.label} 
@@ -254,15 +357,20 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
 
         {pendingFilter && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#e1e1e1' }}>
-              <AlertTriangle className="w-4 h-4 text-yellow-500 animate-[pulse_2s_infinite] drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
-              В ожидании обработки:
+            <div className="mb-2 text-[12px] h-[68px] flex items-center">
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-widest text-white">
+                  <AlertTriangle className="w-4 h-4 text-yellow-500 animate-[pulse_2s_infinite] drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+                  В ожидании обработки
+                </div>
+                <div className="h-px w-8 bg-accent-orange mt-1" />
+              </div>
             </div>
             <div className="space-y-1">
               {[
                 { id: 'all' as const, label: 'Всего', code: 'Все' },
                 { id: 'all' as const, label: 'Новые', code: 'Новые' },
-                { id: 'all' as const, label: 'Завершенные', code: 'Завершенные' },
+                { id: 'all' as const, label: 'Выполненные', code: 'Выполненные' },
                 { id: 'all' as const, label: 'Просроченные', code: 'Просроченные' }
               ].map(p => (
                 <button 
@@ -287,7 +395,7 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
                       if (p.code === 'Все') return true;
                       const s = (app.status || "").toUpperCase();
                       if (p.code === 'Новые') return s === 'NEW' || s === 'RAW';
-                      if (p.code === 'Завершенные') return s === 'COMPLETED';
+                      if (p.code === 'Выполненные') return s === 'COMPLETED';
                       if (p.code === 'Просроченные') {
                         if (s !== 'CONFIRMED') return false;
                         const now = new Date();
@@ -364,12 +472,12 @@ export default function GarageBookingSummary({ date, endDate, garageFilter, isSi
             <span className="text-xs font-bold text-green-400">{loading ? '...' : statusCounts.confirmed}</span>
           </div>
           <div className="flex justify-between items-center gap-4">
-            <span className="text-[10px] text-gray-400 font-medium lowercase">Завершенные</span>
+            <span className="text-[10px] text-gray-400 font-medium lowercase">Выполненные</span>
             <span className="text-xs font-bold text-blue-400">{loading ? '...' : statusCounts.completed}</span>
           </div>
           <div className="flex justify-between items-center gap-4">
-            <span className="text-[10px] text-gray-400 font-medium lowercase">Закрытые</span>
-            <span className="text-xs font-bold text-gray-500">{loading ? '...' : statusCounts.closed}</span>
+            <span className="text-[10px] text-gray-400 font-medium lowercase">Оплачено</span>
+            <span className="text-xs font-bold text-gray-500">{loading ? '...' : statusCounts.paid}</span>
           </div>
         </div>
       </div>
