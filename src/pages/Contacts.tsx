@@ -205,7 +205,9 @@ export default function Contacts() {
               </div>
               <div>
                 <h3 className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-1">Телефон</h3>
-                <p className="text-xl font-bold text-white">+7 (495) 123-45-67</p>
+                <p className="text-xl font-bold text-white">
+                  <a href="tel:+74951234567" className="hover:text-accent-orange transition-colors">+7 (495) 123-45-67</a>
+                </p>
                 <p className="text-sm text-gray-400 mt-1">Ежедневно с 9:00 до 21:00</p>
               </div>
             </div>

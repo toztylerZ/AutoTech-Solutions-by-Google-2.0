@@ -5,9 +5,12 @@ interface AuthState {
   isAuthenticated: boolean;
   user: {
     username: string;
-    role: 'admin' | 'staff';
+    name: string;
+    role: 'администратор' | 'менеджер' | 'работник';
+    access: string | null;
+    box: string | null;
   } | null;
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<any>;
   logout: () => void;
 }
 
@@ -16,13 +19,33 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       isAuthenticated: false,
       user: null,
-      login: (username, password) => {
-        if (username === 'admin' && password === 'admin') {
-          set({ isAuthenticated: true, user: { username, role: 'admin' } });
-          return true;
+      login: async (username, password) => {
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          
+          if (!res.ok) return false;
+          
+          const userData = await res.json();
+          const userObj = {
+            username: userData.username,
+            name: userData.name,
+            role: userData.role,
+            access: userData.access,
+            box: userData.box
+          };
+          set({ 
+            isAuthenticated: true, 
+            user: userObj
+          });
+          return userObj;
+        } catch (err) {
+          console.error("Login failed:", err);
+          return null;
         }
-        // Staff logic could be added here later
-        return false;
       },
       logout: () => set({ isAuthenticated: false, user: null }),
     }),

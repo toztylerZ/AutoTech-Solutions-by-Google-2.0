@@ -16,11 +16,16 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const login = useAuthStore((state) => state.login);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (login(username, password)) {
+    const user = await login(username, password);
+    if (user) {
       onClose();
-      navigate('/admin');
+      if (user.role?.toLowerCase().includes('работник') || user.role?.toLowerCase().includes('персонал')) {
+        navigate('/staff/view', { replace: true });
+      } else {
+        navigate('/admin', { replace: true });
+      }
     } else {
       setError('Неверный логин или пароль');
     }

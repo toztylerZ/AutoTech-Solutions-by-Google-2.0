@@ -4,23 +4,28 @@ export type ServiceType = 'General' | 'Repair' | 'Diagnostic' | 'Detailing';
 export type ViewType = 'grid' | 'log';
 
 export interface Appointment {
+  id?: string;
   orderId: string;
-  date: string;
-  time: string;
-  garage: string;
-  box: string;
-  service: string;
-  duration: number;
-  status: string;
-  clientName: string;
-  phone: string;
-  car: string;
+  date?: string;
+  time?: string;
+  garage?: string;
+  box?: string;
+  service?: string;
+  duration?: number;
+  status?: string;
+  clientName?: string;
+  phone?: string;
+  car?: string;
   note?: string;
   whatToDo?: string;
   finishedTime?: string;
   difficulty?: number | string;
   sessionId?: string;
   createdAt?: string;
+  access?: string;
+  login?: string;
+  password?: string;
+  role?: string;
 }
 
 export interface AppointmentDraft {

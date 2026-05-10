@@ -151,7 +151,7 @@ export default function Footer() {
             <ul className="space-y-4">
               <li className="flex items-center gap-3 text-gray-400 text-sm">
                 <Phone className="w-4 h-4 text-accent-orange" />
-                +7 (495) 123-45-67
+                <a href="tel:+74951234567" className="hover:text-white transition-colors">+7 (495) 123-45-67</a>
               </li>
               <li className="flex items-center gap-3 text-gray-400 text-sm">
                 <Mail className="w-4 h-4 text-accent-orange" />

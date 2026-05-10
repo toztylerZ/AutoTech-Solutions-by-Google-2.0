@@ -843,6 +843,56 @@ app.post("/api/admin/appointments/status", async (req, res) => {
   }
 });
 
+app.post("/api/admin/appointments/close", async (req, res) => {
+  try {
+    const { orderId, complexity, note } = req.body;
+    if (!orderId) return res.status(400).json({ error: "Missing orderId" });
+
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+      range: "booking!A:A",
+    });
+
+    const rows = response.data.values || [];
+    const rowIndex = rows.findIndex((r: any) => r[0] === orderId.toString());
+
+    if (rowIndex === -1) return res.status(404).json({ error: "Appointment not found" });
+
+    const now = new Date();
+    const finishedTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const status = 'COMPLETED';
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+      range: `booking!H${rowIndex + 1}:J${rowIndex + 1}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[status, finishedTime, complexity]]
+      }
+    });
+
+    if (note !== undefined) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SCHEDULE_SPREADSHEET_ID,
+        range: `booking!Q${rowIndex + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[note]]
+        }
+      });
+    }
+
+    await logScheduleAction(orderId, `Закрыта через интерфейс персонала; Сложность: ${complexity}`, "Персонал");
+
+    invalidateCache("appointments");
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Close appointment error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.patch("/api/admin/appointments/:orderId/status", async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -1161,6 +1211,66 @@ app.post("/api/admin/prompts/restore", (req, res) => {
     }
   }
   return res.status(404).json({ error: "Default prompt not found" });
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Missing login or password" });
+    }
+
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: STAFF_SPREADSHEET_ID,
+      range: "staff!A:H",
+    });
+    const rows = response.data.values || [];
+    if (rows.length <= 1) {
+      return res.status(401).json({ error: "Invalid login or password" });
+    }
+
+    const dataRows = rows.slice(1);
+    const userRow = dataRows.find(row => 
+      row[3]?.toString().trim() === username.trim() && 
+      row[4]?.toString().trim() === password.trim()
+    );
+
+    if (!userRow) {
+      // Emergency fallback for initial admin if sheet is empty or admin not found
+      if (username === 'admin' && password === 'admin') {
+         return res.json({
+           username: 'admin',
+           name: 'Администратор',
+           role: 'администратор',
+           access: null,
+           box: null
+         });
+      }
+      return res.status(401).json({ error: "Invalid login or password" });
+    }
+
+    const rawRole = userRow[7]?.toString().toLowerCase().trim() || "";
+    let role = "работник";
+    if (rawRole.includes("администратор") || rawRole.includes("admin")) {
+      role = "администратор";
+    } else if (rawRole.includes("менеджер") || rawRole.includes("manager")) {
+      role = "менеджер";
+    } else {
+      role = "работник";
+    }
+
+    return res.json({
+      username: userRow[3],
+      name: userRow[2],
+      role: role,
+      access: userRow[5]?.toString().trim(),
+      box: userRow[6]?.toString().trim()
+    });
+  } catch (err: any) {
+    console.error("Login error:", err);
+    return res.status(500).json({ error: "Authentication failed" });
+  }
 });
 
 app.get("/api/admin/staff", async (req, res) => {

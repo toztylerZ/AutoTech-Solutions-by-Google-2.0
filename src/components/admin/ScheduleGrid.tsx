@@ -8,15 +8,24 @@ interface ScheduleGridProps {
   date: string;
   endDate?: string | null;
   boxFilter?: string;
+  isStaffView?: boolean;
+  disableInternalScroll?: boolean;
 }
 
 const HOURS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
 const BOXES = ['Бокс А', 'Бокс Б', 'Бокс В'];
 
-export default function ScheduleGrid({ garage, date, endDate, boxFilter }: ScheduleGridProps) {
+const normalizeBox = (b: string) => 
+  (b || '').trim().toUpperCase()
+    .replace('A', 'А') // Latin A -> Cyrillic А
+    .replace('B', 'В') // Latin B -> Cyrillic В
+    .replace('C', 'С'); // Latin C -> Cyrillic С
+
+export default function ScheduleGrid({ garage, date, endDate, boxFilter, isStaffView, disableInternalScroll }: ScheduleGridProps) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [closingAppointment, setClosingAppointment] = useState<any | null>(null);
   const { 
     activeStatus, 
     highlightedOrderId, 
@@ -222,9 +231,10 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
 
   const getAppointmentsAt = (box: string, hour: string, dayApps: any[]) => {
     const slotTime = getTimeValue(hour);
+    const normalizedTargetBox = normalizeBox(box);
     return dayApps.filter(a => {
       const appTime = getTimeValue(a.time);
-      return a.box === box && Math.floor(appTime) === slotTime;
+      return normalizeBox(a.box) === normalizedTargetBox && Math.floor(appTime) === slotTime;
     }).sort((a, b) => {
       // Prioritize non-cancelled appointments
       const sA = (a.status || "").toUpperCase();
@@ -237,10 +247,11 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
 
   const isSlotCovered = (box: string, hour: string, dayApps: any[]) => {
     const slotTime = getTimeValue(hour);
+    const normalizedTargetBox = normalizeBox(box);
     return dayApps.some(a => {
       const start = getTimeValue(a.time);
       const end = start + (Number(a.duration) || 1);
-      return a.box === box && Math.floor(start) < slotTime && end > slotTime;
+      return normalizeBox(a.box) === normalizedTargetBox && Math.floor(start) < slotTime && end > slotTime;
     });
   };
 
@@ -253,9 +264,11 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
     return merged;
   }, [appointments]);
 
-  const displayedBoxes = !boxFilter || boxFilter === 'Все' 
-    ? allBoxes 
-    : allBoxes.filter(b => b === boxFilter);
+  const displayedBoxes = useMemo(() => {
+    if (!boxFilter || boxFilter === 'Все') return allBoxes;
+    const normalizedFilter = normalizeBox(boxFilter);
+    return allBoxes.filter(b => normalizeBox(b) === normalizedFilter);
+  }, [allBoxes, boxFilter]);
 
   const formatPhone = (phone: string) => {
     if (!phone) return phone;
@@ -269,8 +282,8 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
   if (loading) return <div className="p-20 text-center animate-pulse text-gray-500">Загрузка расписания...</div>;
 
   return (
-    <div className="bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl w-full">
-      <div className="overflow-auto max-h-[calc(100vh-120px)] relative space-y-12 pb-12">
+    <div className={`bg-graphite-light rounded-3xl border border-white/5 overflow-hidden shadow-2xl w-full ${disableInternalScroll ? '' : 'max-h-full'}`}>
+      <div className={`overflow-auto relative space-y-12 pb-12 ${disableInternalScroll ? '' : 'max-h-[calc(100vh-120px)]'}`}>
         {datesList.map(currentDate => (
           <div key={currentDate} className="relative group/date">
             <div className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/10 h-[50px] flex items-center justify-center">
@@ -444,18 +457,33 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
                                                       exit={{ opacity: 0, scale: 0.9 }}
                                                       className="absolute top-full right-0 mt-1 z-[100] bg-graphite border border-white/10 rounded-lg py-1 shadow-2xl min-w-[120px]"
                                                     >
-                                                      {STATUS_OPTIONS.map(opt => (
-                                                        <button
-                                                          key={opt.code}
-                                                          onClick={(e) => {
-                                                            handleStatusChange(e, app.orderId, opt.code);
-                                                            setActiveMenu(null);
-                                                          }}
-                                                          className="w-full text-left px-3 py-2 text-[8px] font-black text-gray-400 hover:text-white hover:bg-white/5 transition-colors uppercase tracking-widest"
-                                                        >
-                                                          {opt.label}
-                                                        </button>
-                                                      ))}
+                                                      {isStaffView ? (
+                                                        (app.status || "").toUpperCase() === 'CONFIRMED' ? (
+                                                          <button
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              setClosingAppointment(app);
+                                                              setActiveMenu(null);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2 text-[8px] font-black text-blue-400 hover:text-white hover:bg-white/5 transition-colors uppercase tracking-widest"
+                                                          >
+                                                            ЗАКРЫТЬ ЗАЯВКУ
+                                                          </button>
+                                                        ) : null
+                                                      ) : (
+                                                        STATUS_OPTIONS.map(opt => (
+                                                          <button
+                                                            key={opt.code}
+                                                            onClick={(e) => {
+                                                              handleStatusChange(e, app.orderId, opt.code);
+                                                              setActiveMenu(null);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2 text-[8px] font-black text-gray-400 hover:text-white hover:bg-white/5 transition-colors uppercase tracking-widest"
+                                                          >
+                                                            {opt.label}
+                                                          </button>
+                                                        ))
+                                                      )}
                                                     </motion.div>
                                                   )}
                                                 </AnimatePresence>
@@ -515,6 +543,119 @@ export default function ScheduleGrid({ garage, date, endDate, boxFilter }: Sched
           </div>
         ))}
       </div>
+      <AnimatePresence>
+        {closingAppointment && (
+          <CloseRequestModal 
+            appointment={closingAppointment} 
+            onClose={() => setClosingAppointment(null)} 
+            onSuccess={() => {
+              setClosingAppointment(null);
+              triggerRefresh();
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+interface CloseRequestModalProps {
+  appointment: any;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function CloseRequestModal({ appointment, onClose, onSuccess }: CloseRequestModalProps) {
+  const [complexity, setComplexity] = useState(3);
+  const [note, setNote] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/appointments/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          orderId: appointment.orderId,
+          complexity,
+          note
+        })
+      });
+      if (res.ok) {
+        onSuccess();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        className="bg-graphite-light w-full max-w-md rounded-3xl border border-white/10 shadow-2xl overflow-hidden p-8"
+      >
+        <h2 className="text-xl font-bold text-white mb-6">Закрытие заявки #{appointment.orderId}</h2>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">
+              Сложность работы (1-5)
+            </label>
+            <div className="flex gap-2 justify-between">
+              {[1, 2, 3, 4, 5].map(num => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setComplexity(num)}
+                  className={`w-12 h-12 rounded-xl text-lg font-black transition-all ${
+                    complexity === num 
+                      ? 'bg-accent-orange text-white shadow-[0_0_20px_rgba(255,165,0,0.4)]' 
+                      : 'bg-white/5 text-gray-500 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">
+              Замечания по заявке
+            </label>
+            <textarea
+              className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-white placeholder:text-gray-600 outline-none focus:border-accent-orange/50 transition-colors resize-none"
+              rows={4}
+              placeholder="Введите ваши комментарии или замечания..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-4 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-6 py-4 rounded-2xl bg-white/5 text-gray-400 font-bold hover:bg-white/10 transition-all border border-white/5"
+            >
+              ОТМЕНА
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-4 rounded-2xl bg-accent-orange text-white font-bold hover:shadow-[0_0_30px_rgba(255,165,0,0.4)] transition-all disabled:opacity-50"
+            >
+              {isSubmitting ? 'ЗАКРЫВАЕМ...' : 'ЗАКРЫТЬ ЗАЯВКУ'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
     </div>
   );
 }

@@ -108,16 +108,39 @@ export default function Navbar() {
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   
-  const isAdmin = location.pathname.startsWith('/admin');
+  const user = useAuthStore((state) => state.user);
+  const isManager = user?.role === 'менеджер';
+  const isWorker = user?.role === 'работник';
+  const isInAdminArea = location.pathname.startsWith('/admin');
+  const isInStaffArea = location.pathname.startsWith('/staff');
+  const isAdmin = isInAdminArea; // Keep for existing admin-only logic
   const isAccounts = location.pathname === '/admin/accounts';
 
   const adminMenuLinks = [
     { name: 'Главная', href: '/', icon: Home },
-    { name: 'Расписание', href: '/admin', icon: Calendar },
-    { name: 'Аккаунты', href: '/admin/accounts', icon: Users },
-    { name: 'Статистика', href: '/admin/charts', icon: BarChart3 },
-    { name: 'Настройки', href: '/admin/agents', icon: Bot },
+    { name: 'Расписание', href: isWorker ? '/staff/view' : '/admin', icon: Calendar },
+    ...(!isManager && !isWorker ? [
+      { name: 'Аккаунты', href: '/admin/accounts', icon: Users },
+      { name: 'Статистика', href: '/admin/charts', icon: BarChart3 },
+      { name: 'Настройки', href: '/admin/agents', icon: Bot },
+    ] : []),
   ];
+
+  // Also filter dropdown links for the "Администрирование" menu in public site
+  const filteredAdminDropdownLinks = isWorker ? [
+    { 
+      group: 'РАБОТА', 
+      items: [
+        { name: 'Мое расписание', href: '/staff/view', icon: Calendar },
+      ]
+    }
+  ] : adminDropdownLinks.filter(group => {
+    if (isManager) {
+      // For managers, only allow the schedule group
+      return group.group === 'РАСПИСАНИЕ';
+    }
+    return true;
+  });
   
   const { 
     selectedDate, 
@@ -608,12 +631,12 @@ export default function Navbar() {
                   onMouseLeave={() => setIsSubmenuOpen(false)}
                 >
                   <Link
-                    to="/admin"
+                    to={isWorker ? '/staff/view' : '/admin'}
                     className={`flex items-center gap-1.5 text-sm font-bold transition-colors hover:text-accent-orange py-7 ${
-                      location.pathname.startsWith('/admin') ? 'text-accent-orange' : 'text-white'
+                      (isInAdminArea || isInStaffArea) ? 'text-accent-orange' : 'text-white'
                     }`}
                   >
-                    Администрирование
+                    {user?.username || 'Администрирование'}
                     <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isSubmenuOpen ? 'rotate-180' : ''}`} />
                   </Link>
 
@@ -626,7 +649,7 @@ export default function Navbar() {
                         className="absolute top-full left-0 w-72 bg-graphite-light border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-3 backdrop-blur-xl"
                       >
                         <div className="space-y-4">
-                          {adminDropdownLinks.map((group) => (
+                          {filteredAdminDropdownLinks.map((group) => (
                             <div key={group.group}>
                               <div className="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 px-2">
                                 {group.group}
@@ -737,10 +760,10 @@ export default function Navbar() {
           animate={{ opacity: 1, y: 0 }}
           className="md:hidden bg-graphite-light border-b border-white/10 p-4"
         >
-          {isAdmin ? (
+          {isInAdminArea || isInStaffArea ? (
              <div className="flex flex-col gap-4">
                 <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2 mb-2">Навигация</div>
-                {adminDropdownLinks.map(group => group.items.map(item => (
+                {filteredAdminDropdownLinks.map(group => group.items.map(item => (
                    <Link key={item.name} to={item.href || '#'} className="flex items-center gap-3 px-3 py-2 rounded-xl text-gray-400 hover:text-white">
                       {item.icon && <item.icon className="w-4 h-4" />}
                       <span className="text-sm font-bold">{item.name}</span>

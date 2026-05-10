@@ -13,8 +13,8 @@ export default function Breadcrumbs() {
   const location = useLocation();
   const pathnames = location.pathname.split('/').filter((x) => x);
 
-  // Don't show breadcrumbs on homepage or admin pages
-  if (location.pathname === '/' || location.pathname.startsWith('/admin')) return null;
+  // Don't show breadcrumbs on homepage, admin pages or staff pages
+  if (location.pathname === '/' || location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff')) return null;
 
   return (
     <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">

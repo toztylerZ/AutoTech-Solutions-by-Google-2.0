@@ -26,6 +26,7 @@ import RepairSchedule from './pages/admin/RepairSchedule';
 import DiagnosticSchedule from './pages/admin/DiagnosticSchedule';
 import BodyworkSchedule from './pages/admin/BodyworkSchedule';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import StaffView from './pages/staff/StaffView';
 
 function ScrollToHash() {
   const { pathname, hash } = useLocation();
@@ -47,12 +48,14 @@ function ScrollToHash() {
 function AppContent() {
   const location = useLocation();
   const isAccountsPage = location.pathname === '/admin/accounts';
-  const isAdmin = location.pathname.startsWith('/admin');
+  const isInAdminArea = location.pathname.startsWith('/admin');
+  const isInStaffArea = location.pathname.startsWith('/staff');
+  const isStaffView = location.pathname === '/staff/view';
 
   return (
-    <div className={`flex flex-col ${isAdmin ? 'h-screen' : 'min-h-screen'} bg-graphite selection:bg-accent-orange/30 overflow-hidden`}>
-      <Navbar />
-      <main className={`flex-grow pt-20 ${isAdmin ? 'overflow-hidden' : ''} flex flex-col`}>
+    <div className={`flex flex-col ${isInAdminArea ? 'h-screen' : 'min-h-screen'} bg-graphite selection:bg-accent-orange/30 ${isInAdminArea ? 'overflow-hidden' : ''}`}>
+      {!isStaffView && <Navbar />}
+      <main className={`flex-grow ${!isStaffView ? 'pt-20' : ''} ${isInAdminArea ? 'overflow-hidden' : ''} flex flex-col`}>
         <Breadcrumbs />
         <Routes>
           <Route path="/" element={<Home />} />
@@ -61,9 +64,16 @@ function AppContent() {
           <Route path="/faq" element={<FAQ />} />
           <Route path="/contacts" element={<Contacts />} />
           
+          {/* Staff Route */}
+          <Route path="/staff/view" element={
+            <ProtectedRoute role="работник">
+              <StaffView />
+            </ProtectedRoute>
+          } />
+
           {/* Admin Routes */}
           <Route path="/admin" element={
-            <ProtectedRoute role="admin">
+            <ProtectedRoute role={['администратор', 'менеджер']}>
               <AdminLayout />
             </ProtectedRoute>
           }>
@@ -71,17 +81,43 @@ function AppContent() {
             <Route path="repair" element={<RepairSchedule />} />
             <Route path="diagnostic" element={<DiagnosticSchedule />} />
             <Route path="bodywork" element={<BodyworkSchedule />} />
-            <Route path="charts" element={<AdminCharts />} />
-            <Route path="reports/boxes" element={<AdminReports />} />
-            <Route path="reports/ai" element={<AdminReports />} />
-            <Route path="tables" element={<AdminTables />} />
-            <Route path="accounts" element={<AdminAccounts />} />
-            <Route path="agents" element={<AdminAgents />} />
+            
+            {/* Restricted Admin Routes */}
+            <Route path="charts" element={
+              <ProtectedRoute role="администратор">
+                <AdminCharts />
+              </ProtectedRoute>
+            } />
+            <Route path="reports/boxes" element={
+              <ProtectedRoute role="администратор">
+                <AdminReports />
+              </ProtectedRoute>
+            } />
+            <Route path="reports/ai" element={
+              <ProtectedRoute role="администратор">
+                <AdminReports />
+              </ProtectedRoute>
+            } />
+            <Route path="tables" element={
+              <ProtectedRoute role="администратор">
+                <AdminTables />
+              </ProtectedRoute>
+            } />
+            <Route path="accounts" element={
+              <ProtectedRoute role="администратор">
+                <AdminAccounts />
+              </ProtectedRoute>
+            } />
+            <Route path="agents" element={
+              <ProtectedRoute role="администратор">
+                <AdminAgents />
+              </ProtectedRoute>
+            } />
           </Route>
         </Routes>
       </main>
-      {!isAdmin && <Footer />}
-      {!isAccountsPage && <ChatWidget />}
+      {!isInAdminArea && !isInStaffArea && <Footer />}
+      {!isAccountsPage && !isInStaffArea && <ChatWidget />}
       <BookingModal />
     </div>
   );

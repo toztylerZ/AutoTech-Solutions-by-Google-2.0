@@ -31,6 +31,14 @@ export default function AdminLayout() {
     setIsSearchExpanded
   } = useAdminStore();
 
+  const user = useAuthStore(state => state.user);
+
+  React.useEffect(() => {
+    if (user?.role === 'работник') {
+      navigate('/staff/view');
+    }
+  }, [user, navigate]);
+
   const isAccounts = location.pathname === '/admin/accounts';
 
   const lastSelectedId = React.useRef<string | null>(null);
